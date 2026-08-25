@@ -1,0 +1,128 @@
+# ms-mascotas
+
+Microservicio para gestión de mascotas con enfoque en registro de animales perdidos/encontrados, validación por `X-User-Id` y almacenamiento flexible de características en PostgreSQL usando JSONB.
+
+## Objetivo
+
+El servicio permite registrar mascotas, mantener su estado y consultar mascotas con filtros opcionales según atributos dinámicos descritos por el usuario.
+
+## Arquitectura actual
+
+- Spring Boot 3 / Java 17
+- PostgreSQL
+- Hibernate / JPA
+- JSONB para campos dinámicos
+- Jackson para parseo de texto/JSON a `Map<String, Object>`
+
+## Modelo principal
+
+La entidad `Mascota` representa una mascota con un identificador propio `idMascota` y un `usuarioId` asociado al usuario autenticado.
+
+### Campos principales
+
+- `idMascota`: identificador de la mascota
+- `usuarioId`: ID del dueño o usuario que registra la mascota
+- `tipoMascota`: perro, gato, conejo, otro
+- `nombre`: nombre opcional
+- `color`: color principal
+- `fotografia`: URL o referencia de foto
+- `estado`: estado activo de la mascota
+- `ubicacion`: ubicación textual o geográfica
+- `fecha`: fecha de registro
+- `descripcion`: descripción general
+- `caracteristicas`: `Map<String, Object>` almacenado como JSONB
+
+## Características dinámicas
+
+La parte flexible se guarda en `caracteristicas`, por ejemplo:
+
+```json
+{
+  "manchas": "blancas",
+  "cola": "corta",
+  "cicatriz": false,
+  "pelo": "largo",
+  "edad": 3,
+  "raza": "mestizo"
+}
+```
+
+Esto permite manejar atributos que no siempre son conocidos de antemano, sin crear columnas nuevas para cada propiedad.
+
+## Jackson y parseo de atributos
+
+Cuando llega una descripción o un bloque JSON, se usa Jackson para convertirlo a `Map<String, Object>` antes de persistirlo en PostgreSQL.
+
+Ejemplo conceptual:
+
+```java
+Map<String, Object> mapa = objectMapper.readValue(json, new TypeReference<Map<String, Object>>() {});
+```
+
+## API
+
+### Base path
+
+```http
+/mascotas
+```
+
+### Endpoints principales
+
+- `POST /mascotas`
+- `GET /mascotas`
+- `GET /mascotas/{idMascota}`
+- `GET /mascotas/mis-mascotas`
+- `PATCH /mascotas/{idMascota}`
+- `PATCH /mascotas/{idMascota}/estado`
+- `DELETE /mascotas/{idMascota}`
+
+### Header requerido
+
+Toda operación sensible valida el usuario mediante el header:
+
+```http
+X-User-Id
+```
+
+## Filtros
+
+El listado principal permite filtrar por varios parámetros opcionales:
+
+```http
+GET /mascotas?estado=EXTRAVIADO&tipoMascota=PERRO&color=negro
+```
+
+## PostgreSQL JSONB
+
+La columna `caracteristicas` se guarda como `jsonb`, permitiendo consultas sobre propiedades internas sin necesidad de una estructura rígida en SQL.
+
+## Reglas de negocio
+
+- Se elimina la `Factory Method` y las subclases redundantes.
+- La mascota tiene una sola entidad común.
+- La validación de propiedad se hace con `usuarioId` y el header `X-User-Id`.
+- El identificador público del recurso se usa como `idMascota`.
+
+## Dependencias relevantes
+
+- `org.postgresql:postgresql`
+- `spring-boot-starter-data-jpa`
+- `spring-boot-starter-webmvc`
+- Jackson incluido en Spring Boot
+
+## Configuración recomendada
+
+```properties
+spring.datasource.url=jdbc:postgresql://localhost:5432/ms_mascotas
+spring.datasource.username=postgres
+spring.datasource.password=tu_password
+spring.datasource.driver-class-name=org.postgresql.Driver
+
+spring.jpa.hibernate.ddl-auto=update
+spring.jpa.properties.hibernate.dialect=org.hibernate.dialect.PostgreSQLDialect
+```
+
+## Nota
+
+El proyecto está adaptado para un enfoque de datos dinámicos y flexibles, ideal para rasgos descriptivos de mascotas que pueden cambiar según el caso o la experiencia del usuario.

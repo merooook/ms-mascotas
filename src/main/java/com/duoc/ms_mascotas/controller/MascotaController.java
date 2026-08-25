@@ -14,6 +14,7 @@ import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+
 import com.duoc.ms_mascotas.DTO.ActualizarMascotaDTO;
 import com.duoc.ms_mascotas.DTO.CambiarEstadoDTO;
 import com.duoc.ms_mascotas.DTO.CrearMascotaDTO;
@@ -33,23 +34,25 @@ public class MascotaController {
 
     @PostMapping
     public ResponseEntity<MascotaResponseDTO> crearMascota(
-            @RequestHeader("X-User-Id") String duenoId,
+            @RequestHeader("X-User-Id") String usuarioId,
             @Valid @RequestBody CrearMascotaDTO dto) {
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(mascotaService.crearMascota(dto, duenoId));
+                .body(mascotaService.crearMascota(dto, usuarioId));
     }
 
     @GetMapping
     public Page<MascotaResponseDTO> listarMascotas(
-            @RequestHeader("X-User-Id") String userId,
+            @RequestHeader("X-User-Id") String usuarioId,
             @RequestParam(required = false) Estado estado,
+            @RequestParam(required = false) String tipoMascota,
+            @RequestParam(required = false) String color,
             Pageable pageable) {
-        return mascotaService.listarTodas(estado, pageable);
+        return mascotaService.listarConFiltros(usuarioId, estado, tipoMascota, color, pageable);
     }
 
     @GetMapping("/{id}")
     public ResponseEntity<MascotaResponseDTO> obtenerMascota(
-            @RequestHeader("X-User-Id") String userId,
+            @RequestHeader("X-User-Id") String usuarioId,
             @PathVariable Long id) {
         return mascotaService.obtenerPorId(id)
                 .map(ResponseEntity::ok)
@@ -58,32 +61,32 @@ public class MascotaController {
 
     @GetMapping("/mis-mascotas")
     public Page<MascotaResponseDTO> listarMisMascotas(
-            @RequestHeader("X-User-Id") String duenoId,
+            @RequestHeader("X-User-Id") String usuarioId,
             Pageable pageable) {
-        return mascotaService.misMascotas(duenoId, pageable);
+        return mascotaService.misMascotas(usuarioId, pageable);
     }
 
     @PatchMapping("/{id}")
     public MascotaResponseDTO actualizarMascota(
-            @RequestHeader("X-User-Id") String duenoId,
+            @RequestHeader("X-User-Id") String usuarioId,
             @PathVariable Long id,
             @Valid @RequestBody ActualizarMascotaDTO dto) {
-        return mascotaService.actualizarMascota(id, dto, duenoId);
+        return mascotaService.actualizarMascota(id, dto, usuarioId);
     }
 
     @PatchMapping("/{id}/estado")
     public MascotaResponseDTO cambiarEstado(
-            @RequestHeader("X-User-Id") String duenoId,
+            @RequestHeader("X-User-Id") String usuarioId,
             @PathVariable Long id,
             @Valid @RequestBody CambiarEstadoDTO dto) {
-        return mascotaService.cambiarEstado(id, dto.getEstado(), duenoId);
+        return mascotaService.cambiarEstado(id, dto.getEstado(), usuarioId);
     }
 
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> eliminarMascota(
-            @RequestHeader("X-User-Id") String duenoId,
+            @RequestHeader("X-User-Id") String usuarioId,
             @PathVariable Long id) {
-        mascotaService.eliminarMascota(id, duenoId);
+        mascotaService.eliminarMascota(id, usuarioId);
         return ResponseEntity.noContent().build();
     }
 }

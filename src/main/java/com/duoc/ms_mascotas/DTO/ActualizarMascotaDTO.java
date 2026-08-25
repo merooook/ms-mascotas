@@ -1,8 +1,9 @@
 package com.duoc.ms_mascotas.DTO;
 
+import java.util.Map;
+
 import com.duoc.ms_mascotas.model.Estado;
-import com.duoc.ms_mascotas.model.Patron;
-import com.duoc.ms_mascotas.model.Color;
+
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -11,11 +12,11 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor
 @AllArgsConstructor
 public class ActualizarMascotaDTO {
-    
-    private Estado estado; 
-    private UbicacionDTO ubicacion; 
-    private Patron patron;  
-    private Color color;  
-    private String fotografia;  
+
+    private Estado estado;
+    private String ubicacion;
+    private String color;
+    private String fotografia;
     private String descripcion;
+    private Map<String, Object> caracteristicas;
 }

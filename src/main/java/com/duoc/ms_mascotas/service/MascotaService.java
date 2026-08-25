@@ -1,21 +1,29 @@
 package com.duoc.ms_mascotas.service;
 
-import com.duoc.ms_mascotas.DTO.CrearMascotaDTO;
+import java.time.LocalDateTime;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.Pageable;
+import org.springframework.stereotype.Service;
+
 import com.duoc.ms_mascotas.DTO.ActualizarMascotaDTO;
+import com.duoc.ms_mascotas.DTO.CrearMascotaDTO;
 import com.duoc.ms_mascotas.DTO.MascotaResponseDTO;
-import com.duoc.ms_mascotas.factory.MascotaFactory;
-import com.duoc.ms_mascotas.DTO.UbicacionDTO;
-import com.duoc.ms_mascotas.model.Mascota;
 import com.duoc.ms_mascotas.model.Estado;
+import com.duoc.ms_mascotas.model.Mascota;
 import com.duoc.ms_mascotas.repository.MascotaRepository;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
+
+import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.Pageable;
-import org.springframework.data.geo.Point;
-import org.springframework.stereotype.Service;
-import jakarta.transaction.Transactional;
-import java.util.Optional;
 
 @Slf4j
 @Service
@@ -24,36 +32,29 @@ import java.util.Optional;
 public class MascotaService {
 
     private final MascotaRepository mascotaRepository;
-    private final MascotaFactory mascotaFactory;
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
-    /**
-     * Crear una nueva mascota
-     */
-    public MascotaResponseDTO crearMascota(CrearMascotaDTO dto, String duenoId) {
-        log.info("Creando mascota: nombre='{}', raza={}, para dueno={}",
-                dto.getNombre(), dto.getRaza(), duenoId);
+    public MascotaResponseDTO crearMascota(CrearMascotaDTO dto, String usuarioId) {
+        log.info("Creando mascota: nombre='{}', tipo={}, usuarioId={}", dto.getNombre(), dto.getTipoMascota(), usuarioId);
 
-        Mascota mascota = mascotaFactory.crearMascota(dto.getEspecie());
-        mascota.setNombre(dto.getNombre());
-        mascota.setRaza(dto.getRaza());
-        mascota.setPatron(dto.getPatron());
-        mascota.setColor(dto.getColor());
-        mascota.setFotografia(dto.getFotografia());
-        mascota.setEstado(dto.getEstado());
-        mascota.setUbicacion(toPoint(dto.getUbicacion()));
-        mascota.setDescripcion(dto.getDescripcion());
-        mascota.setSexo(dto.getSexo());
-        mascota.setDuenoId(duenoId);
-        
+        Mascota mascota = Mascota.builder()
+                .usuarioId(usuarioId)
+                .tipoMascota(dto.getTipoMascota())
+                .nombre(dto.getNombre())
+                .color(dto.getColor())
+                .fotografia(dto.getFotografia())
+                .estado(dto.getEstado() != null ? dto.getEstado() : Estado.EXTRAVIADO)
+                .ubicacion(dto.getUbicacion())
+                .fecha(LocalDateTime.now())
+                .descripcion(dto.getDescripcion())
+                .caracteristicas(parseCaracteristicas(dto.getDescripcion(), dto.getCaracteristicas()))
+                .build();
+
         Mascota guardada = mascotaRepository.save(mascota);
-        log.info("Mascota creada exitosamente: id={}, nombre='{}'", guardada.getId(), guardada.getNombre());
-
+        log.info("Mascota creada exitosamente: idMascota={}, nombre='{}'", guardada.getIdMascota(), guardada.getNombre());
         return mapToResponseDTO(guardada);
     }
 
-    /**
-     * Listar todas las mascotas (con filtro opcional de estado)
-     */
     public Page<MascotaResponseDTO> listarTodas(Estado estado, Pageable pageable) {
         log.debug("Listando mascotas, estado={}", estado);
 
@@ -67,34 +68,42 @@ public class MascotaService {
         return mascotas.map(this::mapToResponseDTO);
     }
 
-    /**
-     * Obtener mascota por ID
-     */
+        public Page<MascotaResponseDTO> listarConFiltros(String usuarioId, Estado estado, String tipoMascota,
+            String color, Pageable pageable) {
+        log.debug("Listando mascotas filtradas: usuarioId={}, estado={}, tipoMascota={}, color={}",
+            usuarioId, estado, tipoMascota, color);
+
+        if (estado == null && tipoMascota == null && color == null) {
+            return mascotaRepository.findAll(pageable).map(this::mapToResponseDTO);
+        }
+
+        List<Mascota> mascotas = mascotaRepository.filtrarMascotas(
+                estado != null ? estado.name() : null,
+                tipoMascota,
+                color
+        );
+
+        List<MascotaResponseDTO> dtos = mascotas.stream().map(this::mapToResponseDTO).toList();
+        return new PageImpl<>(dtos, pageable, dtos.size());
+    }
+
     public Optional<MascotaResponseDTO> obtenerPorId(Long id) {
         log.debug("Buscando mascota por id={}", id);
         return mascotaRepository.findById(id).map(this::mapToResponseDTO);
     }
 
-    /**
-     * Obtener mis mascotas (del usuario autenticado)
-     */
-    public Page<MascotaResponseDTO> misMascotas(String duenoId, Pageable pageable) {
-        log.debug("Listando mascotas del dueno={}", duenoId);
-
-        Page<Mascota> mascotas = mascotaRepository.findByDuenoId(duenoId, pageable);
-        return mascotas.map(this::mapToResponseDTO);
+    public Page<MascotaResponseDTO> misMascotas(String usuarioId, Pageable pageable) {
+        log.debug("Listando mascotas del usuario={}", usuarioId);
+        return mascotaRepository.findByUsuarioId(usuarioId, pageable).map(this::mapToResponseDTO);
     }
 
-    /**
-     * Actualizar mascota (campos generales)
-     */
-    public MascotaResponseDTO actualizarMascota(Long id, ActualizarMascotaDTO dto, String duenoId) {
-        log.info("Actualizando mascota id={} del dueno={}", id, duenoId);
+    public MascotaResponseDTO actualizarMascota(Long id, ActualizarMascotaDTO dto, String usuarioId) {
+        log.info("Actualizando mascota idMascota={} del usuario={}", id, usuarioId);
 
         Mascota mascota = mascotaRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("Mascota no encontrada"));
 
-        if (!mascota.getDuenoId().equals(duenoId)) {
+        if (!mascota.getUsuarioId().equals(usuarioId)) {
             throw new IllegalArgumentException("No tienes permiso para actualizar esta mascota");
         }
 
@@ -102,13 +111,10 @@ public class MascotaService {
             mascota.setEstado(dto.getEstado());
         }
         if (dto.getUbicacion() != null) {
-            mascota.setUbicacion(toPoint(dto.getUbicacion()));
+            mascota.setUbicacion(dto.getUbicacion());
         }
         if (dto.getDescripcion() != null) {
             mascota.setDescripcion(dto.getDescripcion());
-        }
-        if (dto.getPatron() != null) {
-            mascota.setPatron(dto.getPatron());
         }
         if (dto.getColor() != null) {
             mascota.setColor(dto.getColor());
@@ -116,95 +122,89 @@ public class MascotaService {
         if (dto.getFotografia() != null) {
             mascota.setFotografia(dto.getFotografia());
         }
+        if (dto.getCaracteristicas() != null && !dto.getCaracteristicas().isEmpty()) {
+            mascota.getCaracteristicas().putAll(dto.getCaracteristicas());
+        }
 
         Mascota actualizada = mascotaRepository.save(mascota);
         log.info("Mascota actualizada: id={}", id);
-
         return mapToResponseDTO(actualizada);
     }
 
-    /**
-     * Cambiar estado de la mascota
-     */
-    public MascotaResponseDTO cambiarEstado(Long id, Estado nuevoEstado, String duenoId) {
-        log.info("Cambiando estado de mascota id={} a {}", id, nuevoEstado);
+    public MascotaResponseDTO cambiarEstado(Long id, Estado nuevoEstado, String usuarioId) {
+        log.info("Cambiando estado de mascota idMascota={} a {}", id, nuevoEstado);
 
         Mascota mascota = mascotaRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("Mascota no encontrada"));
 
-        // Validar que sea el dueño
-        if (!mascota.getDuenoId().equals(duenoId)) {
+        if (!mascota.getUsuarioId().equals(usuarioId)) {
             throw new IllegalArgumentException("No tienes permiso para cambiar el estado");
         }
 
-        // Validar transición de estado
         validarTransicion(mascota.getEstado(), nuevoEstado);
-
         mascota.setEstado(nuevoEstado);
+
         Mascota actualizada = mascotaRepository.save(mascota);
-
-        log.info("Estado cambiado exitosamente: id={}, estado={}", id, nuevoEstado);
-
+        log.info("Estado cambiado exitosamente: idMascota={}, estado={}", id, nuevoEstado);
         return mapToResponseDTO(actualizada);
     }
 
-    /**
-     * Eliminar mascota
-     */
-    public void eliminarMascota(Long id, String duenoId) {
-        log.info("Eliminando mascota id={} del dueno={}", id, duenoId);
+    public void eliminarMascota(Long id, String usuarioId) {
+        log.info("Eliminando mascota idMascota={} del usuario={}", id, usuarioId);
 
         Mascota mascota = mascotaRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("Mascota no encontrada"));
 
-        // Validar que sea el dueño
-        if (!mascota.getDuenoId().equals(duenoId)) {
+        if (!mascota.getUsuarioId().equals(usuarioId)) {
             throw new IllegalArgumentException("No tienes permiso para eliminar esta mascota");
         }
 
         mascotaRepository.deleteById(id);
-        log.info("Mascota eliminada: id={}", id);
+        log.info("Mascota eliminada: idMascota={}", id);
     }
 
-    /**
-     * Validar transiciones de estado permitidas
-     */
     private void validarTransicion(Estado estadoActual, Estado nuevoEstado) {
-        // REUNIFICADO no puede transicionar a otro estado
         if (estadoActual == Estado.REUNIFICADO) {
             throw new IllegalArgumentException("No se puede cambiar el estado de una mascota reunificada");
         }
-
-        // Validaciones adicionales si es necesario
         log.debug("Transición válida: {} -> {}", estadoActual, nuevoEstado);
     }
 
-    /**
-     * Mapear Mascota a ResponseDTO
-     */
+    private Map<String, Object> parseCaracteristicas(String descripcion, Map<String, Object> caracteristicas) {
+        Map<String, Object> mapa = new HashMap<>();
+
+        if (caracteristicas != null && !caracteristicas.isEmpty()) {
+            mapa.putAll(caracteristicas);
+        }
+
+        if (descripcion != null && !descripcion.isBlank()) {
+            try {
+                if (descripcion.trim().startsWith("{")) {
+                    Map<String, Object> parsed = objectMapper.readValue(descripcion, new TypeReference<>() {});
+                    mapa.putAll(parsed);
+                } else {
+                    mapa.put("descripcion", descripcion);
+                }
+            } catch (JsonProcessingException e) {
+                mapa.put("descripcion", descripcion);
+            }
+        }
+
+        return mapa;
+    }
+
     private MascotaResponseDTO mapToResponseDTO(Mascota mascota) {
         return MascotaResponseDTO.builder()
-                .id(mascota.getId())
+                .idMascota(mascota.getIdMascota())
+                .usuarioId(mascota.getUsuarioId())
                 .nombre(mascota.getNombre())
-                .raza(mascota.getRaza())
-                .patron(mascota.getPatron())
+                .tipoMascota(mascota.getTipoMascota())
                 .color(mascota.getColor())
                 .fotografia(mascota.getFotografia())
                 .estado(mascota.getEstado())
-                .ubicacion(toUbicacionDTO(mascota.getUbicacion()))
+                .ubicacion(mascota.getUbicacion())
                 .descripcion(mascota.getDescripcion())
-                .sexo(mascota.getSexo())
+                .caracteristicas(mascota.getCaracteristicas())
                 .build();
-    }
-
-    private Point toPoint(UbicacionDTO ubicacion) {
-        return new Point(ubicacion.getLongitud(), ubicacion.getLatitud());
-    }
-
-    private UbicacionDTO toUbicacionDTO(Point ubicacion) {
-        if (ubicacion == null) {
-            return null;
-        }
-        return new UbicacionDTO(ubicacion.getY(), ubicacion.getX());
     }
 }

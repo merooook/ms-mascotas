@@ -1,12 +1,11 @@
 package com.duoc.ms_mascotas.DTO;
 
-import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotNull;
+import java.util.Map;
+
 import com.duoc.ms_mascotas.model.Estado;
-import com.duoc.ms_mascotas.model.Raza;
-import com.duoc.ms_mascotas.model.Patron;
-import com.duoc.ms_mascotas.model.Color;
-import com.duoc.ms_mascotas.model.Sexo;
+import com.duoc.ms_mascotas.model.TipoMascota;
+
+import jakarta.validation.constraints.NotNull;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -16,31 +15,17 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 public class CrearMascotaDTO {
 
-    @NotBlank(message = "La especie es requerida")
-    private String especie;
-    
-    @NotBlank(message = "El nombre de la mascota no puede estar vacío")
+    @NotNull(message = "El tipo de mascota es requerido")
+    private TipoMascota tipoMascota;
+
     private String nombre;
-    
-    private Raza raza;
-    
-    @NotNull(message = "El patrón es requerido")
-    private Patron patron;
-    
-    @NotNull(message = "El color es requerido")
-    private Color color;
-    
+    private String color;
+    private String fotografia;
+
     @NotNull(message = "El estado es requerido")
     private Estado estado;
-    
-    @NotNull(message = "La ubicación es requerida")
-    private UbicacionDTO ubicacion;
-    
-    @NotBlank(message = "La descripción no puede estar vacía")
+
+    private String ubicacion;
     private String descripcion;
-    
-    @NotNull(message = "El sexo es requerido")
-    private Sexo sexo;
-    
-    private String fotografia;
+    private Map<String, Object> caracteristicas;
 }

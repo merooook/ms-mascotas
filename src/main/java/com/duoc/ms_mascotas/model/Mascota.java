@@ -1,8 +1,12 @@
 package com.duoc.ms_mascotas.model;
 
-import java.sql.Date;
+import java.time.LocalDateTime;
+import java.util.HashMap;
+import java.util.Map;
 
-import org.springframework.data.geo.Point;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
+
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -10,67 +14,55 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
-import jakarta.persistence.MappedSuperclass;
 import jakarta.persistence.Table;
-import jakarta.validation.constraints.NotBlank;
 import lombok.AllArgsConstructor;
+import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
 @Entity
-@Table(name = "Mascota")
+@Table(name = "mascota")
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
-@MappedSuperclass
-public abstract class Mascota {
+@Builder
+public class Mascota {
 
     @Id
-	@GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long idMascota;
 
-    //no sé si esto va aquí ya que será el factory de la mascota, pero por ahora lo dejo comentado
-    //@Enumerated(EnumType.STRING)
-    //@Column(length = 20)
-    //private TipoMascota tipoMascota;
+    @Column(name = "usuario_id", nullable = false)
+    private String usuarioId;
 
-    @Column(nullable = false, length = 50)
-    @NotBlank(message = "El nombre de la mascota no puede estar vacío")
+    @Enumerated(EnumType.STRING)
+    @Column(name = "tipo_mascota", nullable = false, length = 20)
+    private TipoMascota tipoMascota;
+
+    @Column(length = 100)
     private String nombre;
 
-    @Column(nullable = false)
-    private String duenoId;
-
-    @Enumerated(EnumType.STRING)
-    @Column(length = 28)
-    private Raza raza;
-
-    @Enumerated(EnumType.STRING)
     @Column(length = 50)
-    private Patron patron;
-
-    @Enumerated(EnumType.STRING)
-    @Column(length = 20)
-    private Color color;
-
-    @Enumerated(EnumType.STRING)
-    @Column(length = 10)
-    private Sexo sexo;
+    private String color;
 
     @Column(length = 255)
     private String fotografia;
 
     @Enumerated(EnumType.STRING)
-    @Column(length = 50)
+    @Column(nullable = false, length = 20)
     private Estado estado;
 
-    @Column(columnDefinition = "geography(POINT,4326)", nullable = false)
-    private Point ubicacion;
+    @Column(length = 255)
+    private String ubicacion;
 
     @Column(nullable = false)
-    private Date fecha;
+    private LocalDateTime fecha;
 
-    @Column(nullable = false, length = 200)
+    @Column(columnDefinition = "TEXT")
     private String descripcion;
 
+    @JdbcTypeCode(SqlTypes.JSON) // Hibernate: usar tipo JSON
+    @Column(columnDefinition = "jsonb") // JPA: crear columna como JSONB
+    @Builder.Default //por defecto hashmap vacío, no null
+    private Map<String, Object> caracteristicas = new HashMap<>(); // Java: guardar cualquier estructura
 }
