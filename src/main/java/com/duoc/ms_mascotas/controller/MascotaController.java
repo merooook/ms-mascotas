@@ -53,7 +53,7 @@ public class MascotaController {
     @GetMapping("/{id}")
     public ResponseEntity<MascotaResponseDTO> obtenerMascota(
             @RequestHeader("X-User-Id") String usuarioId,
-            @PathVariable Long id) {
+            @PathVariable String id) {
         return mascotaService.obtenerPorId(id)
                 .map(ResponseEntity::ok)
                 .orElseGet(() -> ResponseEntity.notFound().build());
@@ -69,7 +69,7 @@ public class MascotaController {
     @PatchMapping("/{id}")
     public MascotaResponseDTO actualizarMascota(
             @RequestHeader("X-User-Id") String usuarioId,
-            @PathVariable Long id,
+            @PathVariable String id,
             @Valid @RequestBody ActualizarMascotaDTO dto) {
         return mascotaService.actualizarMascota(id, dto, usuarioId);
     }
@@ -77,7 +77,7 @@ public class MascotaController {
     @PatchMapping("/{id}/estado")
     public MascotaResponseDTO cambiarEstado(
             @RequestHeader("X-User-Id") String usuarioId,
-            @PathVariable Long id,
+            @PathVariable String id,
             @Valid @RequestBody CambiarEstadoDTO dto) {
         return mascotaService.cambiarEstado(id, dto.getEstado(), usuarioId);
     }
@@ -85,7 +85,7 @@ public class MascotaController {
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> eliminarMascota(
             @RequestHeader("X-User-Id") String usuarioId,
-            @PathVariable Long id) {
+            @PathVariable String id) {
         mascotaService.eliminarMascota(id, usuarioId);
         return ResponseEntity.noContent().build();
     }

@@ -14,6 +14,7 @@ import org.springframework.stereotype.Service;
 import com.duoc.ms_mascotas.DTO.ActualizarMascotaDTO;
 import com.duoc.ms_mascotas.DTO.CrearMascotaDTO;
 import com.duoc.ms_mascotas.DTO.MascotaResponseDTO;
+import com.duoc.ms_mascotas.DTO.UbicacionDTO;
 import com.duoc.ms_mascotas.model.Estado;
 import com.duoc.ms_mascotas.model.Mascota;
 import com.duoc.ms_mascotas.repository.MascotaRepository;
@@ -21,17 +22,20 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
-import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.mongodb.core.MongoTemplate;
+import org.springframework.data.mongodb.core.geo.GeoJsonPoint;
+import org.springframework.data.mongodb.core.query.Criteria;
+import org.springframework.data.mongodb.core.query.Query;
 
 @Slf4j
 @Service
-@Transactional
 @RequiredArgsConstructor
 public class MascotaService {
 
     private final MascotaRepository mascotaRepository;
+    private final MongoTemplate mongoTemplate;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     public MascotaResponseDTO crearMascota(CrearMascotaDTO dto, String usuarioId) {
@@ -44,7 +48,7 @@ public class MascotaService {
                 .color(dto.getColor())
                 .fotografia(dto.getFotografia())
                 .estado(dto.getEstado() != null ? dto.getEstado() : Estado.EXTRAVIADO)
-                .ubicacion(dto.getUbicacion())
+                .ubicacion(toGeoJsonPoint(dto.getUbicacion()))
                 .fecha(LocalDateTime.now())
                 .descripcion(dto.getDescripcion())
                 .caracteristicas(parseCaracteristicas(dto.getDescripcion(), dto.getCaracteristicas()))
@@ -77,17 +81,24 @@ public class MascotaService {
             return mascotaRepository.findAll(pageable).map(this::mapToResponseDTO);
         }
 
-        List<Mascota> mascotas = mascotaRepository.filtrarMascotas(
-                estado != null ? estado.name() : null,
-                tipoMascota,
-                color
-        );
+        Query query = new Query();
+        if (estado != null) {
+            query.addCriteria(Criteria.where("estado").is(estado));
+        }
+        if (tipoMascota != null) {
+            query.addCriteria(Criteria.where("tipoMascota").is(tipoMascota));
+        }
+        if (color != null) {
+            query.addCriteria(Criteria.where("color").is(color));
+        }
 
+        long total = mongoTemplate.count(query, Mascota.class);
+        List<Mascota> mascotas = mongoTemplate.find(query.with(pageable), Mascota.class);
         List<MascotaResponseDTO> dtos = mascotas.stream().map(this::mapToResponseDTO).toList();
-        return new PageImpl<>(dtos, pageable, dtos.size());
+        return new PageImpl<>(dtos, pageable, total);
     }
 
-    public Optional<MascotaResponseDTO> obtenerPorId(Long id) {
+    public Optional<MascotaResponseDTO> obtenerPorId(String id) {
         log.debug("Buscando mascota por id={}", id);
         return mascotaRepository.findById(id).map(this::mapToResponseDTO);
     }
@@ -97,7 +108,7 @@ public class MascotaService {
         return mascotaRepository.findByUsuarioId(usuarioId, pageable).map(this::mapToResponseDTO);
     }
 
-    public MascotaResponseDTO actualizarMascota(Long id, ActualizarMascotaDTO dto, String usuarioId) {
+    public MascotaResponseDTO actualizarMascota(String id, ActualizarMascotaDTO dto, String usuarioId) {
         log.info("Actualizando mascota idMascota={} del usuario={}", id, usuarioId);
 
         Mascota mascota = mascotaRepository.findById(id)
@@ -111,7 +122,7 @@ public class MascotaService {
             mascota.setEstado(dto.getEstado());
         }
         if (dto.getUbicacion() != null) {
-            mascota.setUbicacion(dto.getUbicacion());
+            mascota.setUbicacion(toGeoJsonPoint(dto.getUbicacion()));
         }
         if (dto.getDescripcion() != null) {
             mascota.setDescripcion(dto.getDescripcion());
@@ -131,7 +142,7 @@ public class MascotaService {
         return mapToResponseDTO(actualizada);
     }
 
-    public MascotaResponseDTO cambiarEstado(Long id, Estado nuevoEstado, String usuarioId) {
+    public MascotaResponseDTO cambiarEstado(String id, Estado nuevoEstado, String usuarioId) {
         log.info("Cambiando estado de mascota idMascota={} a {}", id, nuevoEstado);
 
         Mascota mascota = mascotaRepository.findById(id)
@@ -149,7 +160,7 @@ public class MascotaService {
         return mapToResponseDTO(actualizada);
     }
 
-    public void eliminarMascota(Long id, String usuarioId) {
+    public void eliminarMascota(String id, String usuarioId) {
         log.info("Eliminando mascota idMascota={} del usuario={}", id, usuarioId);
 
         Mascota mascota = mascotaRepository.findById(id)
@@ -202,9 +213,23 @@ public class MascotaService {
                 .color(mascota.getColor())
                 .fotografia(mascota.getFotografia())
                 .estado(mascota.getEstado())
-                .ubicacion(mascota.getUbicacion())
+                .ubicacion(toUbicacionDTO(mascota.getUbicacion()))
                 .descripcion(mascota.getDescripcion())
                 .caracteristicas(mascota.getCaracteristicas())
                 .build();
+    }
+
+    private GeoJsonPoint toGeoJsonPoint(UbicacionDTO ubicacion) {
+        if (ubicacion == null) {
+            return null;
+        }
+        return new GeoJsonPoint(ubicacion.getLongitud(), ubicacion.getLatitud());
+    }
+
+    private UbicacionDTO toUbicacionDTO(GeoJsonPoint ubicacion) {
+        if (ubicacion == null) {
+            return null;
+        }
+        return new UbicacionDTO(ubicacion.getY(), ubicacion.getX());
     }
 }

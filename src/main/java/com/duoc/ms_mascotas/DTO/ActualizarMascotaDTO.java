@@ -14,7 +14,7 @@ import lombok.NoArgsConstructor;
 public class ActualizarMascotaDTO {
 
     private Estado estado;
-    private String ubicacion;
+    private UbicacionDTO ubicacion;
     private String color;
     private String fotografia;
     private String descripcion;

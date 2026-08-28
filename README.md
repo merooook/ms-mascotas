@@ -1,6 +1,6 @@
 # ms-mascotas
 
-Microservicio para gestión de mascotas con enfoque en registro de animales perdidos/encontrados, validación por `X-User-Id` y almacenamiento flexible de características en PostgreSQL usando JSONB.
+Microservicio para gestión de mascotas con enfoque en registro de animales perdidos/encontrados, validación por `X-User-Id` y almacenamiento flexible de características en MongoDB.
 
 ## Objetivo
 
@@ -9,9 +9,9 @@ El servicio permite registrar mascotas, mantener su estado y consultar mascotas 
 ## Arquitectura actual
 
 - Spring Boot 3 / Java 17
-- PostgreSQL
-- Hibernate / JPA
-- JSONB para campos dinámicos
+- MongoDB
+- Spring Data MongoDB
+- Documentos flexibles para campos dinámicos
 - Jackson para parseo de texto/JSON a `Map<String, Object>`
 
 ## Modelo principal
@@ -51,7 +51,7 @@ Esto permite manejar atributos que no siempre son conocidos de antemano, sin cre
 
 ## Jackson y parseo de atributos
 
-Cuando llega una descripción o un bloque JSON, se usa Jackson para convertirlo a `Map<String, Object>` antes de persistirlo en PostgreSQL.
+Cuando llega una descripción o un bloque JSON, se usa Jackson para convertirlo a `Map<String, Object>` antes de persistirlo en MongoDB.
 
 Ejemplo conceptual:
 
@@ -93,9 +93,11 @@ El listado principal permite filtrar por varios parámetros opcionales:
 GET /mascotas?estado=EXTRAVIADO&tipoMascota=PERRO&color=negro
 ```
 
-## PostgreSQL JSONB
+## MongoDB
 
-La columna `caracteristicas` se guarda como `jsonb`, permitiendo consultas sobre propiedades internas sin necesidad de una estructura rígida en SQL.
+La propiedad `caracteristicas` se guarda como un objeto embebido dentro del documento, permitiendo atributos dinámicos sin una estructura rígida.
+
+La propiedad `ubicacion` se almacena como un punto GeoJSON usando `GeoJsonPoint`, con coordenadas en el orden MongoDB: longitud y latitud.
 
 ## Reglas de negocio
 
@@ -106,22 +108,23 @@ La columna `caracteristicas` se guarda como `jsonb`, permitiendo consultas sobre
 
 ## Dependencias relevantes
 
-- `org.postgresql:postgresql`
-- `spring-boot-starter-data-jpa`
+- `spring-boot-starter-data-mongodb`
 - `spring-boot-starter-webmvc`
 - Jackson incluido en Spring Boot
 
 ## Configuración recomendada
 
 ```properties
-spring.datasource.url=jdbc:postgresql://localhost:5432/ms_mascotas
-spring.datasource.username=postgres
-spring.datasource.password=tu_password
-spring.datasource.driver-class-name=org.postgresql.Driver
-
-spring.jpa.hibernate.ddl-auto=update
-spring.jpa.properties.hibernate.dialect=org.hibernate.dialect.PostgreSQLDialect
+spring.data.mongodb.uri=mongodb://localhost:27017/mascotas_db
 ```
+
+Para usar MongoDB Atlas, configurar la URI mediante la variable de entorno `MONGODB_URI`:
+
+```properties
+spring.data.mongodb.uri=${MONGODB_URI}
+```
+
+Consulta el detalle de la migración en [REFACTOR-MONGODB.md](REFACTOR-MONGODB.md).
 
 ## Nota
 

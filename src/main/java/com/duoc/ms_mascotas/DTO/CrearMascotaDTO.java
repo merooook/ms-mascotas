@@ -25,7 +25,7 @@ public class CrearMascotaDTO {
     @NotNull(message = "El estado es requerido")
     private Estado estado;
 
-    private String ubicacion;
+    private UbicacionDTO ubicacion;
     private String descripcion;
     private Map<String, Object> caracteristicas;
 }

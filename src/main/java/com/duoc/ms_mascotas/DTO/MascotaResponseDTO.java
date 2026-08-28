@@ -16,14 +16,14 @@ import lombok.NoArgsConstructor;
 @Builder
 public class MascotaResponseDTO {
 
-    private Long idMascota;
+    private String idMascota;
     private String usuarioId;
     private String nombre;
     private TipoMascota tipoMascota;
     private String color;
     private String fotografia;
     private Estado estado;
-    private String ubicacion;
+    private UbicacionDTO ubicacion;
     private String descripcion;
     private Map<String, Object> caracteristicas;
 }
