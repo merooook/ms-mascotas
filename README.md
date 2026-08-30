@@ -129,3 +129,6 @@ Consulta el detalle de la migración en [REFACTOR-MONGODB.md](REFACTOR-MONGODB.m
 ## Nota
 
 El proyecto está adaptado para un enfoque de datos dinámicos y flexibles, ideal para rasgos descriptivos de mascotas que pueden cambiar según el caso o la experiencia del usuario.
+
+
+./mvnw.cmd -DskipTests package

@@ -1,0 +1,31 @@
+services:
+  mongodb:
+    image: mongo:8.0
+    container_name: ms-mascotas-mongodb
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - mascotas-mongo-data:/data/db
+    healthcheck:
+      test: ["CMD-SHELL", "mongosh --quiet --eval \"db.adminCommand('ping').ok\" --host localhost | grep 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  mascotas:
+    build: .
+    container_name: ms-mascotas
+    restart: unless-stopped
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    environment:
+      SPRING_MVC_SERVLET_PATH: /api/v1
+      MONGODB_URI: mongodb://mongodb:27017/mascotas_db
+    ports:
+      - "8082:8082"
+
+volumes:
+  mascotas-mongo-data:

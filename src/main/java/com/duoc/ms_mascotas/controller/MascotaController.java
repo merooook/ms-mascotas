@@ -26,7 +26,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 
 @RestController
-@RequestMapping("/mascotas")
+@RequestMapping("api/v1/mascotas")
 @RequiredArgsConstructor
 public class MascotaController {
 
