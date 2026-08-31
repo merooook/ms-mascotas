@@ -45,9 +45,8 @@ public class MascotaController {
             @RequestHeader("X-User-Id") String usuarioId,
             @RequestParam(required = false) Estado estado,
             @RequestParam(required = false) String tipoMascota,
-            @RequestParam(required = false) String color,
             Pageable pageable) {
-        return mascotaService.listarConFiltros(usuarioId, estado, tipoMascota, color, pageable);
+        return mascotaService.listarConFiltros(usuarioId, estado, tipoMascota, pageable);
     }
 
     @GetMapping("/{id}")

@@ -1,0 +1,19 @@
+spring:
+  application:
+    name: ms-mascotas
+  config:
+    import: optional:file:.env[.properties]
+  mongodb:
+      uri: ${MONGODB_URI}
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: ${COGNITO_ISSUER_URI}
+          jwk-set-uri: ${COGNITO_JWK_SET_URI}
+
+server:
+  port: ${PORT:8082}
+
+cognito:
+  client-id: ${COGNITO_CLIENT_ID}

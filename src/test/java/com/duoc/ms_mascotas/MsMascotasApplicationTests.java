@@ -36,7 +36,7 @@ class MsMascotasApplicationTests {
 
 	@Test
 	void dockerProfileStartsAndExposesVersionedApi() throws Exception {
-		when(mascotaService.listarConFiltros(eq("integration-test"), isNull(), isNull(), isNull(), any(Pageable.class)))
+		when(mascotaService.listarConFiltros(eq("integration-test"), isNull(), isNull(), any(Pageable.class)))
 				.thenReturn(Page.empty());
 		mockMvc.perform(get("/api/v1/mascotas").header("X-User-Id", "integration-test"))
 				.andExpect(status().isOk());

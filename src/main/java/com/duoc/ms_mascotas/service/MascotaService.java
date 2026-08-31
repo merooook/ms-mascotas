@@ -45,7 +45,6 @@ public class MascotaService {
                 .usuarioId(usuarioId)
                 .tipoMascota(dto.getTipoMascota())
                 .nombre(dto.getNombre())
-                .color(dto.getColor())
                 .fotografia(dto.getFotografia())
                 .estado(dto.getEstado() != null ? dto.getEstado() : Estado.EXTRAVIADO)
                 .ubicacion(toGeoJsonPoint(dto.getUbicacion()))
@@ -72,12 +71,12 @@ public class MascotaService {
         return mascotas.map(this::mapToResponseDTO);
     }
 
-        public Page<MascotaResponseDTO> listarConFiltros(String usuarioId, Estado estado, String tipoMascota,
-            String color, Pageable pageable) {
-        log.debug("Listando mascotas filtradas: usuarioId={}, estado={}, tipoMascota={}, color={}",
-            usuarioId, estado, tipoMascota, color);
+    public Page<MascotaResponseDTO> listarConFiltros(String usuarioId, Estado estado, String tipoMascota,
+            Pageable pageable) {
+        log.debug("Listando mascotas filtradas: usuarioId={}, estado={}, tipoMascota={}",
+            usuarioId, estado, tipoMascota);
 
-        if (estado == null && tipoMascota == null && color == null) {
+        if (estado == null && tipoMascota == null) {
             return mascotaRepository.findAll(pageable).map(this::mapToResponseDTO);
         }
 
@@ -87,9 +86,6 @@ public class MascotaService {
         }
         if (tipoMascota != null) {
             query.addCriteria(Criteria.where("tipoMascota").is(tipoMascota));
-        }
-        if (color != null) {
-            query.addCriteria(Criteria.where("color").is(color));
         }
 
         long total = mongoTemplate.count(query, Mascota.class);
@@ -126,9 +122,6 @@ public class MascotaService {
         }
         if (dto.getDescripcion() != null) {
             mascota.setDescripcion(dto.getDescripcion());
-        }
-        if (dto.getColor() != null) {
-            mascota.setColor(dto.getColor());
         }
         if (dto.getFotografia() != null) {
             mascota.setFotografia(dto.getFotografia());
@@ -210,7 +203,6 @@ public class MascotaService {
                 .usuarioId(mascota.getUsuarioId())
                 .nombre(mascota.getNombre())
                 .tipoMascota(mascota.getTipoMascota())
-                .color(mascota.getColor())
                 .fotografia(mascota.getFotografia())
                 .estado(mascota.getEstado())
                 .ubicacion(toUbicacionDTO(mascota.getUbicacion()))

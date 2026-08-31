@@ -20,7 +20,6 @@ public class MascotaResponseDTO {
     private String usuarioId;
     private String nombre;
     private TipoMascota tipoMascota;
-    private String color;
     private String fotografia;
     private Estado estado;
     private UbicacionDTO ubicacion;

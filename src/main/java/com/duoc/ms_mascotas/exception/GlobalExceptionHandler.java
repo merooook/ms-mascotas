@@ -1,4 +1,4 @@
-package com.duoc.ms_mascotas.config;
+package com.duoc.ms_mascotas.exception;
 
 import java.time.Instant;
 import java.util.LinkedHashMap;

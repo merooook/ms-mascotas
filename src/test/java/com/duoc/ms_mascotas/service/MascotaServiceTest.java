@@ -56,7 +56,7 @@ public class MascotaServiceTest {
 
 	@Test
 	void crearMascotaAsignaEstadoYMapeaLaRespuesta() {
-		CrearMascotaDTO dto = new CrearMascotaDTO(TipoMascota.PERRO, "Luna", "negro", null,
+		CrearMascotaDTO dto = new CrearMascotaDTO(TipoMascota.PERRO, "Luna", null,
 				Estado.EXTRAVIADO, null, "raza mestiza", null);
 		when(mascotaRepository.save(any(Mascota.class))).thenReturn(mascota);
 

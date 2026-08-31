@@ -31,8 +31,6 @@ public class Mascota {
 
     private String nombre;
 
-    private String color;
-
     private String fotografia;
 
     private Estado estado;

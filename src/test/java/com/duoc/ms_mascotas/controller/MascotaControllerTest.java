@@ -43,18 +43,18 @@ public class MascotaControllerTest {
 	@Test
 	void listarMascotasDelegaAlServicio() {
 		PageRequest pageable = PageRequest.of(0, 20);
-		when(mascotaService.listarConFiltros(eq("usuario-1"), isNull(), isNull(), isNull(), eq(pageable)))
+		when(mascotaService.listarConFiltros(eq("usuario-1"), isNull(), isNull(), eq(pageable)))
 				.thenReturn(Page.empty());
 
-		Page<?> resultado = mascotaController.listarMascotas("usuario-1", null, null, null, pageable);
+		Page<?> resultado = mascotaController.listarMascotas("usuario-1", null, null, pageable);
 
 		org.assertj.core.api.Assertions.assertThat(resultado).isEmpty();
-		verify(mascotaService).listarConFiltros("usuario-1", null, null, null, pageable);
+		verify(mascotaService).listarConFiltros("usuario-1", null, null, pageable);
 	}
 
 	@Test
 	void listarMascotasSinHeaderRespondeBadRequest() throws Exception {
-		mockMvc.perform(get("/api/v1/mascotas"))
+		mockMvc.perform(get("/mascotas"))
 				.andExpect(status().isBadRequest());
 	}
 
@@ -62,13 +62,13 @@ public class MascotaControllerTest {
 	void obtenerMascotaInexistenteRespondeNotFound() throws Exception {
 		when(mascotaService.obtenerPorId("desconocida")).thenReturn(Optional.empty());
 
-		mockMvc.perform(get("/api/v1/mascotas/desconocida").header("X-User-Id", "usuario-1"))
+		mockMvc.perform(get("/mascotas/desconocida").header("X-User-Id", "usuario-1"))
 				.andExpect(status().isNotFound());
 	}
 
 	@Test
 	void eliminarMascotaRespondeNoContent() throws Exception {
-		mockMvc.perform(delete("/api/v1/mascotas/mascota-1").header("X-User-Id", "usuario-1"))
+		mockMvc.perform(delete("/mascotas/mascota-1").header("X-User-Id", "usuario-1"))
 				.andExpect(status().isNoContent());
 
 		verify(mascotaService).eliminarMascota("mascota-1", "usuario-1");

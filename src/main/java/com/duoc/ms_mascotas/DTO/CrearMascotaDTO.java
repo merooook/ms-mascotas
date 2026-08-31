@@ -19,7 +19,6 @@ public class CrearMascotaDTO {
     private TipoMascota tipoMascota;
 
     private String nombre;
-    private String color;
     private String fotografia;
 
     @NotNull(message = "El estado es requerido")
