@@ -20,6 +20,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.mongodb.core.MongoTemplate;
+import org.springframework.data.mongodb.core.geo.GeoJsonPoint;
 
 import com.duoc.ms_mascotas.DTO.ActualizarMascotaDTO;
 import com.duoc.ms_mascotas.DTO.CrearMascotaDTO;
@@ -57,15 +58,53 @@ public class MascotaServiceTest {
 	@Test
 	void crearMascotaAsignaEstadoYMapeaLaRespuesta() {
 		CrearMascotaDTO dto = new CrearMascotaDTO(TipoMascota.PERRO, "Luna", null,
-				Estado.EXTRAVIADO, null, "raza mestiza", null);
+				Estado.EXTRAVIADO, null, "raza mestiza", null, "reportante@example.com");
 		when(mascotaRepository.save(any(Mascota.class))).thenReturn(mascota);
 
 		var respuesta = mascotaService.crearMascota(dto, "usuario-1");
 
 		assertThat(respuesta.getIdMascota()).isEqualTo("mascota-1");
-		assertThat(respuesta.getUsuarioId()).isEqualTo("usuario-1");
 		assertThat(respuesta.getEstado()).isEqualTo(Estado.EXTRAVIADO);
 		verify(mascotaRepository).save(any(Mascota.class));
+	}
+
+	@Test
+	void crearMascotaPersisteElEmailDeContacto() {
+		when(mascotaRepository.save(any(Mascota.class))).thenAnswer(inv -> inv.getArgument(0));
+		CrearMascotaDTO dto = new CrearMascotaDTO(TipoMascota.PERRO, "Luna", null,
+				Estado.EXTRAVIADO, null, null, null, "reportante@example.com");
+
+		mascotaService.crearMascota(dto, "usuario-1");
+
+		org.mockito.ArgumentCaptor<Mascota> captor = org.mockito.ArgumentCaptor.forClass(Mascota.class);
+		verify(mascotaRepository).save(captor.capture());
+		assertThat(captor.getValue().getEmailContacto()).isEqualTo("reportante@example.com");
+	}
+
+	@Test
+	void laUbicacionPublicaSaleRedondeadaPorPrivacidad() {
+		// -33.456789, -70.987654 son las coordenadas EXACTAS guardadas — la
+		// respuesta pública nunca debe devolver esta precisión.
+		mascota.setUbicacion(new GeoJsonPoint(-70.987654, -33.456789));
+		when(mascotaRepository.save(any(Mascota.class))).thenReturn(mascota);
+		CrearMascotaDTO dto = new CrearMascotaDTO(TipoMascota.PERRO, "Luna", null,
+				Estado.EXTRAVIADO, null, null, null, "reportante@example.com");
+
+		var respuesta = mascotaService.crearMascota(dto, "usuario-1");
+
+		assertThat(respuesta.getUbicacion().getLatitud()).isEqualTo(-33.46);
+		assertThat(respuesta.getUbicacion().getLongitud()).isEqualTo(-70.99);
+	}
+
+	@Test
+	void obtenerParaContactoNoExponeElDTOPublico() {
+		mascota.setEmailContacto("duena@example.com");
+		when(mascotaRepository.findById("mascota-1")).thenReturn(Optional.of(mascota));
+
+		var resultado = mascotaService.obtenerParaContacto("mascota-1");
+
+		assertThat(resultado).isPresent();
+		assertThat(resultado.get().getEmailContacto()).isEqualTo("duena@example.com");
 	}
 
 	@Test
