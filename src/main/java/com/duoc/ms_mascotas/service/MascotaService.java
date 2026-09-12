@@ -43,6 +43,7 @@ public class MascotaService {
 
         Mascota mascota = Mascota.builder()
                 .usuarioId(usuarioId)
+                .emailContacto(dto.getEmailContacto())
                 .tipoMascota(dto.getTipoMascota())
                 .nombre(dto.getNombre())
                 .fotografia(dto.getFotografia())
@@ -97,6 +98,14 @@ public class MascotaService {
     public Optional<MascotaResponseDTO> obtenerPorId(String id) {
         log.debug("Buscando mascota por id={}", id);
         return mascotaRepository.findById(id).map(this::mapToResponseDTO);
+    }
+
+    // Para el endpoint interno que consume ms-alertas (GET
+    // /internal/mascotas/{id}/contacto) — nunca se expone al frontend, así
+    // que no pasa por mapToResponseDTO ni por el redondeo de ubicación.
+    public Optional<Mascota> obtenerParaContacto(String id) {
+        log.debug("Resolviendo contacto interno para mascotaId={}", id);
+        return mascotaRepository.findById(id);
     }
 
     public Page<MascotaResponseDTO> misMascotas(String usuarioId, Pageable pageable) {
@@ -200,7 +209,6 @@ public class MascotaService {
     private MascotaResponseDTO mapToResponseDTO(Mascota mascota) {
         return MascotaResponseDTO.builder()
                 .idMascota(mascota.getIdMascota())
-                .usuarioId(mascota.getUsuarioId())
                 .nombre(mascota.getNombre())
                 .tipoMascota(mascota.getTipoMascota())
                 .fotografia(mascota.getFotografia())
@@ -222,6 +230,13 @@ public class MascotaService {
         if (ubicacion == null) {
             return null;
         }
-        return new UbicacionDTO(ubicacion.getY(), ubicacion.getX());
+        // Ubicación aproximada por privacidad: se redondea a 2 decimales
+        // (~1,1 km de margen) antes de salir de este servicio. La coordenada
+        // exacta solo vive en el documento de Mongo, nunca en una respuesta.
+        return new UbicacionDTO(redondear(ubicacion.getY()), redondear(ubicacion.getX()));
+    }
+
+    private double redondear(double coordenada) {
+        return Math.round(coordenada * 100.0) / 100.0;
     }
 }

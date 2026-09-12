@@ -27,6 +27,13 @@ public class Mascota {
     @Indexed
     private String usuarioId;
 
+    // Revierte la decisión del 30-ago-2026 de no persistir el correo: sin él,
+    // ms-alertas no tenía de dónde sacar el destinatario para el flujo de
+    // Contacto (GET /internal/mascotas/{id}/contacto ya lo esperaba). Nunca
+    // se expone en MascotaResponseDTO (la respuesta pública) — solo lo
+    // devuelve ese endpoint interno.
+    private String emailContacto;
+
     private TipoMascota tipoMascota;
 
     private String nombre;

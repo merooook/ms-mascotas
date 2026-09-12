@@ -16,8 +16,11 @@ import lombok.NoArgsConstructor;
 @Builder
 public class MascotaResponseDTO {
 
+    // usuarioId se saca a propósito: es el identificador del dueño y no debe
+    // exponerse en respuestas públicas (regla de minimización de datos del
+    // proyecto). emailContacto tampoco se incluye aquí nunca — solo lo
+    // devuelve el endpoint interno /internal/mascotas/{id}/contacto.
     private String idMascota;
-    private String usuarioId;
     private String nombre;
     private TipoMascota tipoMascota;
     private String fotografia;
