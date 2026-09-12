@@ -31,6 +31,12 @@ services:
       MONGODB_URI: mongodb://mongodb:27017/mascotas_db
       CONFIG_SERVER_URL: http://config-server:8888
       EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://discovery-server:8761/eureka/
+      # Faltaban por completo — sin esto, Cognito nunca llegaba al contenedor
+      # (el .env local no se copia a la imagen, ver Dockerfile). docker-compose
+      # los toma de un .env en esta misma carpeta (ver .env.example).
+      COGNITO_ISSUER_URI: ${COGNITO_ISSUER_URI}
+      COGNITO_JWK_SET_URI: ${COGNITO_JWK_SET_URI}
+      COGNITO_CLIENT_ID: ${COGNITO_CLIENT_ID}
     ports:
       - "8082:8082"
     networks:

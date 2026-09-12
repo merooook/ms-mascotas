@@ -1,32 +1,12 @@
+# Reducido a propósito (12-sep-2026): mismo patrón que el proyecto anterior
+# (Ticketti/MS-FULLSTACK) — el resto de la configuración (puerto, Mongo,
+# Cognito, Eureka) vive en sanos-y-salvos-config_server/config/ms-mascotas.yml,
+# no acá. "optional:file:.env" se mantiene solo como comodidad para correr
+# `mvn spring-boot:run` sin Docker ni config-server levantados; en Docker el
+# .env no se copia a la imagen (ver Dockerfile), así que ahí siempre depende
+# de que el config-server responda.
 spring:
   application:
     name: ms-mascotas
   config:
     import: "optional:file:.env[.properties],optional:configserver:${CONFIG_SERVER_URL:http://localhost:8888}"
-  mongodb:
-      uri: ${MONGODB_URI}
-  security:
-    oauth2:
-      resourceserver:
-        jwt:
-          issuer-uri: ${COGNITO_ISSUER_URI}
-          jwk-set-uri: ${COGNITO_JWK_SET_URI}
-
-server:
-  port: ${PORT:8082}
-
-# Eureka client — mismo patrón que ms-alertas y el BFF
-eureka:
-  client:
-    service-url:
-      defaultZone: ${EUREKA_CLIENT_SERVICEURL_DEFAULTZONE:http://localhost:8761/eureka/}
-    registry-fetch-interval-seconds: 5
-  instance:
-    prefer-ip-address: true
-    lease-renewal-interval-in-seconds: 5
-    lease-expiration-duration-in-seconds: 15
-    status-page-url-path: /actuator/health
-    health-check-url-path: /actuator/health
-
-cognito:
-  client-id: ${COGNITO_CLIENT_ID}
