@@ -13,6 +13,8 @@ services:
       timeout: 5s
       retries: 5
       start_period: 10s
+    networks:
+      - sanos-y-salvos-network
 
   mascotas:
     build: .
@@ -22,10 +24,22 @@ services:
       mongodb:
         condition: service_healthy
     environment:
-      SPRING_MVC_SERVLET_PATH: /api/v1
+      # SPRING_MVC_SERVLET_PATH=/api/v1 se sacó a propósito: el controller
+      # ya vive en /mascotas (revertido en la reunión del 30-ago, commit
+      # 9bbdb32) y esta variable reproducía el mismo choque con el BFF pero
+      # solo al desplegar con Docker — ver CLAUDE.md, sección ms-mascotas.
       MONGODB_URI: mongodb://mongodb:27017/mascotas_db
+      CONFIG_SERVER_URL: http://config-server:8888
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://discovery-server:8761/eureka/
     ports:
       - "8082:8082"
+    networks:
+      - sanos-y-salvos-network
 
 volumes:
   mascotas-mongo-data:
+
+networks:
+  sanos-y-salvos-network:
+    external: true
+    name: sanos-y-salvos-network
