@@ -42,17 +42,18 @@ public class MascotaController {
 
     @GetMapping
     public Page<MascotaResponseDTO> listarMascotas(
-            @RequestHeader("X-User-Id") String usuarioId,
+            @RequestHeader(value = "X-User-Id", required = false) String usuarioId,
             @RequestParam(required = false) Estado estado,
             @RequestParam(required = false) String tipoMascota,
             Pageable pageable) {
         return mascotaService.listarConFiltros(usuarioId, estado, tipoMascota, pageable);
     }
 
+    // Sin X-User-Id obligatorio: el detalle es de acceso libre para invitados
+    // (misma decisión de UX que el listado). El id no se usaba de todas
+    // formas — el servicio no filtra por usuarioId acá.
     @GetMapping("/{id}")
-    public ResponseEntity<MascotaResponseDTO> obtenerMascota(
-            @RequestHeader("X-User-Id") String usuarioId,
-            @PathVariable String id) {
+    public ResponseEntity<MascotaResponseDTO> obtenerMascota(@PathVariable String id) {
         return mascotaService.obtenerPorId(id)
                 .map(ResponseEntity::ok)
                 .orElseGet(() -> ResponseEntity.notFound().build());

@@ -34,7 +34,18 @@ public class SecurityConfig {
             .csrf(csrf -> csrf.disable())
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers("/actuator/health", "/swagger-ui/**", "/v3/api-docs/**", "/swagger-ui.html").permitAll()
-                .requestMatchers(HttpMethod.GET, "/mascotas").permitAll()
+                // Llamada de servicio a servicio desde ms-alertas, sin JWT (ver
+                // InternalMascotaController) — protegida por red, no por token.
+                .requestMatchers("/internal/**").permitAll()
+                // OJO con el orden: /mascotas/{id} de abajo también matchearía
+                // literalmente "/mascotas/mis-mascotas" (un solo segmento), así
+                // que esta regla más específica tiene que ir ANTES para que
+                // gane ella y ese endpoint (datos del propio usuario) siga
+                // exigiendo JWT.
+                .requestMatchers(HttpMethod.GET, "/mascotas/mis-mascotas").authenticated()
+                // Listado y detalle son de acceso libre para invitados (misma
+                // decisión de UX que ms-alertas: GET /alertas, /alertas/zona).
+                .requestMatchers(HttpMethod.GET, "/mascotas", "/mascotas/{id}").permitAll()
                 .anyRequest().authenticated()
             )
             .oauth2ResourceServer(oauth2 -> oauth2.jwt(jwt -> jwt.decoder(jwtDecoder())));
