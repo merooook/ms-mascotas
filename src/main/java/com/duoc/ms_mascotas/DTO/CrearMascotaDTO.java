@@ -27,6 +27,10 @@ public class CrearMascotaDTO {
     private Estado estado;
 
     private UbicacionDTO ubicacion;
+
+    @NotBlank(message = "La comuna es requerida")
+    private String comuna;
+
     private String descripcion;
     private Map<String, Object> caracteristicas;
 

@@ -49,6 +49,7 @@ public class MascotaService {
                 .fotografia(dto.getFotografia())
                 .estado(dto.getEstado() != null ? dto.getEstado() : Estado.EXTRAVIADO)
                 .ubicacion(toGeoJsonPoint(dto.getUbicacion()))
+                .comuna(dto.getComuna())
                 .fecha(LocalDateTime.now())
                 .descripcion(dto.getDescripcion())
                 .caracteristicas(parseCaracteristicas(dto.getDescripcion(), dto.getCaracteristicas()))
@@ -73,11 +74,11 @@ public class MascotaService {
     }
 
     public Page<MascotaResponseDTO> listarConFiltros(String usuarioId, Estado estado, String tipoMascota,
-            Pageable pageable) {
-        log.debug("Listando mascotas filtradas: usuarioId={}, estado={}, tipoMascota={}",
-            usuarioId, estado, tipoMascota);
+            String comuna, Pageable pageable) {
+        log.debug("Listando mascotas filtradas: usuarioId={}, estado={}, tipoMascota={}, comuna={}",
+            usuarioId, estado, tipoMascota, comuna);
 
-        if (estado == null && tipoMascota == null) {
+        if (estado == null && tipoMascota == null && comuna == null) {
             return mascotaRepository.findAll(pageable).map(this::mapToResponseDTO);
         }
 
@@ -87,6 +88,11 @@ public class MascotaService {
         }
         if (tipoMascota != null) {
             query.addCriteria(Criteria.where("tipoMascota").is(tipoMascota));
+        }
+        if (comuna != null) {
+            // regex + case-insensitive: evita que "Viña del Mar" y
+            // "viña del mar" cuenten como comunas distintas.
+            query.addCriteria(Criteria.where("comuna").regex("^" + java.util.regex.Pattern.quote(comuna) + "$", "i"));
         }
 
         long total = mongoTemplate.count(query, Mascota.class);
@@ -128,6 +134,9 @@ public class MascotaService {
         }
         if (dto.getUbicacion() != null) {
             mascota.setUbicacion(toGeoJsonPoint(dto.getUbicacion()));
+        }
+        if (dto.getComuna() != null) {
+            mascota.setComuna(dto.getComuna());
         }
         if (dto.getDescripcion() != null) {
             mascota.setDescripcion(dto.getDescripcion());
@@ -214,6 +223,7 @@ public class MascotaService {
                 .fotografia(mascota.getFotografia())
                 .estado(mascota.getEstado())
                 .ubicacion(toUbicacionDTO(mascota.getUbicacion()))
+                .comuna(mascota.getComuna())
                 .descripcion(mascota.getDescripcion())
                 .caracteristicas(mascota.getCaracteristicas())
                 .build();

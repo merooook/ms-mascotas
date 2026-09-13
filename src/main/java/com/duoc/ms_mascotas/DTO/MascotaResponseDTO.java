@@ -26,6 +26,7 @@ public class MascotaResponseDTO {
     private String fotografia;
     private Estado estado;
     private UbicacionDTO ubicacion;
+    private String comuna;
     private String descripcion;
     private Map<String, Object> caracteristicas;
 }

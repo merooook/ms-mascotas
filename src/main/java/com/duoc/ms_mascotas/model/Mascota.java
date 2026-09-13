@@ -45,6 +45,12 @@ public class Mascota {
     @GeoSpatialIndexed
     private GeoJsonPoint ubicacion;
 
+    // Campo propio (no dentro de caracteristicas) porque es un filtro
+    // central del producto — R-N°5 pide buscar mascotas por comuna, y un
+    // Map dinámico no es cómodo de indexar ni de filtrar con Criteria.
+    @Indexed
+    private String comuna;
+
     private LocalDateTime fecha;
 
     private String descripcion;

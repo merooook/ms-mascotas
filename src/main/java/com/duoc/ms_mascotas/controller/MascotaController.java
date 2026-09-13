@@ -45,8 +45,9 @@ public class MascotaController {
             @RequestHeader(value = "X-User-Id", required = false) String usuarioId,
             @RequestParam(required = false) Estado estado,
             @RequestParam(required = false) String tipoMascota,
+            @RequestParam(required = false) String comuna,
             Pageable pageable) {
-        return mascotaService.listarConFiltros(usuarioId, estado, tipoMascota, pageable);
+        return mascotaService.listarConFiltros(usuarioId, estado, tipoMascota, comuna, pageable);
     }
 
     // Sin X-User-Id obligatorio: el detalle es de acceso libre para invitados

@@ -43,7 +43,7 @@ class MsMascotasApplicationTests {
 
 	@Test
 	void contextLoadsAndListadoEsAccesibleParaInvitados() throws Exception {
-		when(mascotaService.listarConFiltros(isNull(), isNull(), isNull(), any(Pageable.class)))
+		when(mascotaService.listarConFiltros(isNull(), isNull(), isNull(), isNull(), any(Pageable.class)))
 				.thenReturn(Page.empty(PageRequest.of(0, 20)));
 		mockMvc.perform(get("/mascotas"))
 				.andExpect(status().isOk());

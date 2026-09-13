@@ -51,13 +51,24 @@ public class MascotaControllerTest {
 	@Test
 	void listarMascotasDelegaAlServicio() {
 		PageRequest pageable = PageRequest.of(0, 20);
-		when(mascotaService.listarConFiltros(eq("usuario-1"), isNull(), isNull(), eq(pageable)))
+		when(mascotaService.listarConFiltros(eq("usuario-1"), isNull(), isNull(), isNull(), eq(pageable)))
 				.thenReturn(Page.empty());
 
-		Page<?> resultado = mascotaController.listarMascotas("usuario-1", null, null, pageable);
+		Page<?> resultado = mascotaController.listarMascotas("usuario-1", null, null, null, pageable);
 
 		org.assertj.core.api.Assertions.assertThat(resultado).isEmpty();
-		verify(mascotaService).listarConFiltros("usuario-1", null, null, pageable);
+		verify(mascotaService).listarConFiltros("usuario-1", null, null, null, pageable);
+	}
+
+	@Test
+	void listarMascotasFiltraPorComuna() {
+		PageRequest pageable = PageRequest.of(0, 20);
+		when(mascotaService.listarConFiltros(isNull(), isNull(), isNull(), eq("Viña del Mar"), eq(pageable)))
+				.thenReturn(Page.empty());
+
+		mascotaController.listarMascotas(null, null, null, "Viña del Mar", pageable);
+
+		verify(mascotaService).listarConFiltros(null, null, null, "Viña del Mar", pageable);
 	}
 
 	@Test
@@ -65,7 +76,7 @@ public class MascotaControllerTest {
 		// Page.empty() sin argumentos usa Pageable.unpaged(), que Jackson no
 		// sabe serializar (UnsupportedOperationException) — hay que darle un
 		// Pageable real, como el que resuelve PageableHandlerMethodArgumentResolver.
-		when(mascotaService.listarConFiltros(isNull(), isNull(), isNull(), any(Pageable.class)))
+		when(mascotaService.listarConFiltros(isNull(), isNull(), isNull(), isNull(), any(Pageable.class)))
 				.thenReturn(Page.empty(PageRequest.of(0, 20)));
 
 		mockMvc.perform(get("/mascotas"))

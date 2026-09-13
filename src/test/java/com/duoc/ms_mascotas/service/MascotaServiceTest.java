@@ -3,6 +3,7 @@ package com.duoc.ms_mascotas.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -58,7 +59,7 @@ public class MascotaServiceTest {
 	@Test
 	void crearMascotaAsignaEstadoYMapeaLaRespuesta() {
 		CrearMascotaDTO dto = new CrearMascotaDTO(TipoMascota.PERRO, "Luna", null,
-				Estado.EXTRAVIADO, null, "raza mestiza", null, "reportante@example.com");
+				Estado.EXTRAVIADO, null, "Viña del Mar", "raza mestiza", null, "reportante@example.com");
 		when(mascotaRepository.save(any(Mascota.class))).thenReturn(mascota);
 
 		var respuesta = mascotaService.crearMascota(dto, "usuario-1");
@@ -72,7 +73,7 @@ public class MascotaServiceTest {
 	void crearMascotaPersisteElEmailDeContacto() {
 		when(mascotaRepository.save(any(Mascota.class))).thenAnswer(inv -> inv.getArgument(0));
 		CrearMascotaDTO dto = new CrearMascotaDTO(TipoMascota.PERRO, "Luna", null,
-				Estado.EXTRAVIADO, null, null, null, "reportante@example.com");
+				Estado.EXTRAVIADO, null, "Viña del Mar", null, null, "reportante@example.com");
 
 		mascotaService.crearMascota(dto, "usuario-1");
 
@@ -88,7 +89,7 @@ public class MascotaServiceTest {
 		mascota.setUbicacion(new GeoJsonPoint(-70.987654, -33.456789));
 		when(mascotaRepository.save(any(Mascota.class))).thenReturn(mascota);
 		CrearMascotaDTO dto = new CrearMascotaDTO(TipoMascota.PERRO, "Luna", null,
-				Estado.EXTRAVIADO, null, null, null, "reportante@example.com");
+				Estado.EXTRAVIADO, null, "Viña del Mar", null, null, "reportante@example.com");
 
 		var respuesta = mascotaService.crearMascota(dto, "usuario-1");
 
@@ -105,6 +106,23 @@ public class MascotaServiceTest {
 
 		assertThat(resultado).isPresent();
 		assertThat(resultado.get().getEmailContacto()).isEqualTo("duena@example.com");
+	}
+
+	@Test
+	void listarConFiltrosFiltraPorComuna() {
+		// R-N°5 (Anexo de Requisitos): buscar mascotas por comuna. comuna vive
+		// como campo propio de Mascota, no dentro de caracteristicas, para
+		// poder filtrar así.
+		PageRequest pageable = PageRequest.of(0, 10);
+		mascota.setComuna("Viña del Mar");
+		when(mongoTemplate.count(any(), eq(Mascota.class))).thenReturn(1L);
+		when(mongoTemplate.find(any(), eq(Mascota.class))).thenReturn(java.util.List.of(mascota));
+
+		Page<com.duoc.ms_mascotas.DTO.MascotaResponseDTO> resultado =
+				mascotaService.listarConFiltros(null, null, null, "Viña del Mar", pageable);
+
+		assertThat(resultado).hasSize(1);
+		assertThat(resultado.getContent().get(0).getComuna()).isEqualTo("Viña del Mar");
 	}
 
 	@Test

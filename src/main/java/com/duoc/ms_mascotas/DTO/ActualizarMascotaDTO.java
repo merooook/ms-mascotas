@@ -15,6 +15,7 @@ public class ActualizarMascotaDTO {
 
     private Estado estado;
     private UbicacionDTO ubicacion;
+    private String comuna;
     private String fotografia;
     private String descripcion;
     private Map<String, Object> caracteristicas;
