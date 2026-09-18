@@ -1,5 +1,6 @@
 package com.duoc.ms_mascotas.DTO;
 
+import java.time.LocalDateTime;
 import java.util.Map;
 
 import com.duoc.ms_mascotas.model.Estado;
@@ -29,4 +30,5 @@ public class MascotaResponseDTO {
     private String comuna;
     private String descripcion;
     private Map<String, Object> caracteristicas;
+    private LocalDateTime fecha; // ###################################
 }

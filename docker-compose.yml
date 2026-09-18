@@ -1,49 +1,20 @@
 services:
-  mongodb:
-    image: mongo:8.0
-    container_name: ms-mascotas-mongodb
-    restart: unless-stopped
-    ports:
-      - "27017:27017"
-    volumes:
-      - mascotas-mongo-data:/data/db
-    healthcheck:
-      test: ["CMD-SHELL", "mongosh --quiet --eval \"db.adminCommand('ping').ok\" --host localhost | grep 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 10s
-    networks:
-      - sanos-y-salvos-network
-
   mascotas:
     build: .
     container_name: ms-mascotas
     restart: unless-stopped
-    depends_on:
-      mongodb:
-        condition: service_healthy
     environment:
-      # SPRING_MVC_SERVLET_PATH=/api/v1 se sacó a propósito: el controller
-      # ya vive en /mascotas (revertido en la reunión del 30-ago, commit
-      # 9bbdb32) y esta variable reproducía el mismo choque con el BFF pero
-      # solo al desplegar con Docker — ver CLAUDE.md, sección ms-mascotas.
-      MONGODB_URI: mongodb://mongodb:27017/mascotas_db
+      SPRING_MVC_SERVLET_PATH: /api/v1
+      MONGODB_URI: ${MONGODB_URI}
       CONFIG_SERVER_URL: http://config-server:8888
       EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://discovery-server:8761/eureka/
-      # Faltaban por completo — sin esto, Cognito nunca llegaba al contenedor
-      # (el .env local no se copia a la imagen, ver Dockerfile). docker-compose
-      # los toma de un .env en esta misma carpeta (ver .env.example).
-      COGNITO_ISSUER_URI: ${COGNITO_ISSUER_URI}
-      COGNITO_JWK_SET_URI: ${COGNITO_JWK_SET_URI}
+      COGNITO_ISSUER_URI: https://cognito-idp.us-east-1.amazonaws.com/${COGNITO_USER_POOL_ID}
+      COGNITO_JWK_SET_URI: https://cognito-idp.us-east-1.amazonaws.com/${COGNITO_USER_POOL_ID}/.well-known/jwks.json
       COGNITO_CLIENT_ID: ${COGNITO_CLIENT_ID}
     ports:
       - "8082:8082"
     networks:
       - sanos-y-salvos-network
-
-volumes:
-  mascotas-mongo-data:
 
 networks:
   sanos-y-salvos-network:

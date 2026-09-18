@@ -226,6 +226,7 @@ public class MascotaService {
                 .comuna(mascota.getComuna())
                 .descripcion(mascota.getDescripcion())
                 .caracteristicas(mascota.getCaracteristicas())
+                .fecha(mascota.getFecha()) // ###################################
                 .build();
     }
 
