@@ -1,0 +1,169 @@
+package com.duoc.ms_mascotas.service;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
+import java.util.Map;
+import java.util.Optional;
+
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.mongodb.core.MongoTemplate;
+import org.springframework.data.mongodb.core.geo.GeoJsonPoint;
+
+import com.duoc.ms_mascotas.DTO.ActualizarMascotaDTO;
+import com.duoc.ms_mascotas.DTO.CrearMascotaDTO;
+import com.duoc.ms_mascotas.model.Estado;
+import com.duoc.ms_mascotas.model.Mascota;
+import com.duoc.ms_mascotas.model.TipoMascota;
+import com.duoc.ms_mascotas.repository.MascotaRepository;
+
+@ExtendWith(MockitoExtension.class)
+public class MascotaServiceTest {
+
+	@Mock
+	private MascotaRepository mascotaRepository;
+
+	@Mock
+	private MongoTemplate mongoTemplate;
+
+	@InjectMocks
+	private MascotaService mascotaService;
+
+	private Mascota mascota;
+
+	@BeforeEach
+	void setUp() {
+		mascota = Mascota.builder()
+				.idMascota("mascota-1")
+				.usuarioId("usuario-1")
+				.tipoMascota(TipoMascota.PERRO)
+				.nombre("Luna")
+				.estado(Estado.EXTRAVIADO)
+				.caracteristicas(Map.of("raza", "mestiza"))
+				.build();
+	}
+
+	@Test
+	void crearMascotaAsignaEstadoYMapeaLaRespuesta() {
+		CrearMascotaDTO dto = new CrearMascotaDTO(TipoMascota.PERRO, "Luna", null,
+				Estado.EXTRAVIADO, null, "Viña del Mar", "raza mestiza", null, "reportante@example.com");
+		when(mascotaRepository.save(any(Mascota.class))).thenReturn(mascota);
+
+		var respuesta = mascotaService.crearMascota(dto, "usuario-1");
+
+		assertThat(respuesta.getIdMascota()).isEqualTo("mascota-1");
+		assertThat(respuesta.getEstado()).isEqualTo(Estado.EXTRAVIADO);
+		verify(mascotaRepository).save(any(Mascota.class));
+	}
+
+	@Test
+	void crearMascotaPersisteElEmailDeContacto() {
+		when(mascotaRepository.save(any(Mascota.class))).thenAnswer(inv -> inv.getArgument(0));
+		CrearMascotaDTO dto = new CrearMascotaDTO(TipoMascota.PERRO, "Luna", null,
+				Estado.EXTRAVIADO, null, "Viña del Mar", null, null, "reportante@example.com");
+
+		mascotaService.crearMascota(dto, "usuario-1");
+
+		org.mockito.ArgumentCaptor<Mascota> captor = org.mockito.ArgumentCaptor.forClass(Mascota.class);
+		verify(mascotaRepository).save(captor.capture());
+		assertThat(captor.getValue().getEmailContacto()).isEqualTo("reportante@example.com");
+	}
+
+	@Test
+	void laUbicacionPublicaSaleRedondeadaPorPrivacidad() {
+		// -33.456789, -70.987654 son las coordenadas EXACTAS guardadas — la
+		// respuesta pública nunca debe devolver esta precisión.
+		mascota.setUbicacion(new GeoJsonPoint(-70.987654, -33.456789));
+		when(mascotaRepository.save(any(Mascota.class))).thenReturn(mascota);
+		CrearMascotaDTO dto = new CrearMascotaDTO(TipoMascota.PERRO, "Luna", null,
+				Estado.EXTRAVIADO, null, "Viña del Mar", null, null, "reportante@example.com");
+
+		var respuesta = mascotaService.crearMascota(dto, "usuario-1");
+
+		assertThat(respuesta.getUbicacion().getLatitud()).isEqualTo(-33.46);
+		assertThat(respuesta.getUbicacion().getLongitud()).isEqualTo(-70.99);
+	}
+
+	@Test
+	void obtenerParaContactoNoExponeElDTOPublico() {
+		mascota.setEmailContacto("duena@example.com");
+		when(mascotaRepository.findById("mascota-1")).thenReturn(Optional.of(mascota));
+
+		var resultado = mascotaService.obtenerParaContacto("mascota-1");
+
+		assertThat(resultado).isPresent();
+		assertThat(resultado.get().getEmailContacto()).isEqualTo("duena@example.com");
+	}
+
+	@Test
+	void listarConFiltrosFiltraPorComuna() {
+		// R-N°5 (Anexo de Requisitos): buscar mascotas por comuna. comuna vive
+		// como campo propio de Mascota, no dentro de caracteristicas, para
+		// poder filtrar así.
+		PageRequest pageable = PageRequest.of(0, 10);
+		mascota.setComuna("Viña del Mar");
+		when(mongoTemplate.count(any(), eq(Mascota.class))).thenReturn(1L);
+		when(mongoTemplate.find(any(), eq(Mascota.class))).thenReturn(java.util.List.of(mascota));
+
+		Page<com.duoc.ms_mascotas.DTO.MascotaResponseDTO> resultado =
+				mascotaService.listarConFiltros(null, null, null, "Viña del Mar", pageable);
+
+		assertThat(resultado).hasSize(1);
+		assertThat(resultado.getContent().get(0).getComuna()).isEqualTo("Viña del Mar");
+	}
+
+	@Test
+	void listarTodasFiltraPorEstado() {
+		PageRequest pageable = PageRequest.of(0, 10);
+		when(mascotaRepository.findByEstado(Estado.EXTRAVIADO, pageable))
+				.thenReturn(new PageImpl<>(java.util.List.of(mascota), pageable, 1));
+
+		Page<?> resultado = mascotaService.listarTodas(Estado.EXTRAVIADO, pageable);
+
+		assertThat(resultado).hasSize(1);
+		verify(mascotaRepository).findByEstado(Estado.EXTRAVIADO, pageable);
+	}
+
+	@Test
+	void actualizarMascotaRechazaUsuarioSinPermiso() {
+		when(mascotaRepository.findById("mascota-1")).thenReturn(Optional.of(mascota));
+
+		assertThatThrownBy(() -> mascotaService.actualizarMascota("mascota-1", new ActualizarMascotaDTO(), "otro-usuario"))
+				.isInstanceOf(IllegalArgumentException.class)
+				.hasMessage("No tienes permiso para actualizar esta mascota");
+		verify(mascotaRepository, never()).save(any(Mascota.class));
+	}
+
+	@Test
+	void cambiarEstadoRechazaMascotaReunificada() {
+		mascota.setEstado(Estado.REUNIFICADO);
+		when(mascotaRepository.findById("mascota-1")).thenReturn(Optional.of(mascota));
+
+		assertThatThrownBy(() -> mascotaService.cambiarEstado("mascota-1", Estado.ENCONTRADO, "usuario-1"))
+				.isInstanceOf(IllegalArgumentException.class)
+				.hasMessage("No se puede cambiar el estado de una mascota reunificada");
+		verify(mascotaRepository, never()).save(any(Mascota.class));
+	}
+
+	@Test
+	void eliminarMascotaSoloEliminaSiPerteneceAlUsuario() {
+		when(mascotaRepository.findById("mascota-1")).thenReturn(Optional.of(mascota));
+
+		mascotaService.eliminarMascota("mascota-1", "usuario-1");
+
+		verify(mascotaRepository).deleteById("mascota-1");
+	}
+}

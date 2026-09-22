@@ -1,0 +1,24 @@
+# Overlay de valores dummy usados solo en tests, para que el contexto de
+# Spring cargue sin depender de credenciales reales de Cognito ni de
+# servidores externos (Eureka/Config Server). Mismo patrón que
+# sanos-y-salvos-ms-alertas/src/test/resources/application-test.yml.
+# Se activa con @ActiveProfiles("test").
+cognito:
+  client-id: test-client-id
+
+spring:
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: https://cognito-idp.us-east-1.amazonaws.com/us-east-1_test00000
+          jwk-set-uri: https://cognito-idp.us-east-1.amazonaws.com/us-east-1_test00000/.well-known/jwks.json
+  config:
+    import: ""   # no intentar contactar al config-server durante los tests
+  cloud:
+    config:
+      enabled: false
+
+eureka:
+  client:
+    enabled: false   # no intentar registrarse en Eureka durante los tests

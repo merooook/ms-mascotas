@@ -1,0 +1,12 @@
+# Reducido a propósito (12-sep-2026): mismo patrón que el proyecto anterior
+# (Ticketti/MS-FULLSTACK) — el resto de la configuración (puerto, Mongo,
+# Cognito, Eureka) vive en sanos-y-salvos-config_server/config/ms-mascotas.yml,
+# no acá. "optional:file:.env" se mantiene solo como comodidad para correr
+# `mvn spring-boot:run` sin Docker ni config-server levantados; en Docker el
+# .env no se copia a la imagen (ver Dockerfile), así que ahí siempre depende
+# de que el config-server responda.
+spring:
+  application:
+    name: ms-mascotas
+  config:
+    import: "optional:file:.env[.properties],optional:configserver:${CONFIG_SERVER_URL:http://localhost:8888}"

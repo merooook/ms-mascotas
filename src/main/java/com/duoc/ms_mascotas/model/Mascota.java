@@ -1,76 +1,60 @@
 package com.duoc.ms_mascotas.model;
 
-import java.sql.Date;
+import java.time.LocalDateTime;
+import java.util.HashMap;
+import java.util.Map;
 
-import org.springframework.data.geo.Point;
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.EnumType;
-import jakarta.persistence.Enumerated;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.GenerationType;
-import jakarta.persistence.Id;
-import jakarta.persistence.MappedSuperclass;
-import jakarta.persistence.Table;
-import jakarta.validation.constraints.NotBlank;
+import org.springframework.data.annotation.Id;
+import org.springframework.data.mongodb.core.index.Indexed;
+import org.springframework.data.mongodb.core.index.GeoSpatialIndexed;
+import org.springframework.data.mongodb.core.geo.GeoJsonPoint;
+import org.springframework.data.mongodb.core.mapping.Document;
 import lombok.AllArgsConstructor;
+import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-@Entity
-@Table(name = "Mascota")
+@Document(collection = "mascotas")
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
-@MappedSuperclass
-public abstract class Mascota {
+@Builder
+public class Mascota {
 
     @Id
-	@GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
+    private String idMascota;
 
-    //no sé si esto va aquí ya que será el factory de la mascota, pero por ahora lo dejo comentado
-    //@Enumerated(EnumType.STRING)
-    //@Column(length = 20)
-    //private TipoMascota tipoMascota;
+    @Indexed
+    private String usuarioId;
 
-    @Column(nullable = false, length = 50)
-    @NotBlank(message = "El nombre de la mascota no puede estar vacío")
+    // Revierte la decisión del 30-ago-2026 de no persistir el correo: sin él,
+    // ms-alertas no tenía de dónde sacar el destinatario para el flujo de
+    // Contacto (GET /internal/mascotas/{id}/contacto ya lo esperaba). Nunca
+    // se expone en MascotaResponseDTO (la respuesta pública) — solo lo
+    // devuelve ese endpoint interno.
+    private String emailContacto;
+
+    private TipoMascota tipoMascota;
+
     private String nombre;
 
-    @Column(nullable = false)
-    private String duenoId;
-
-    @Enumerated(EnumType.STRING)
-    @Column(length = 28)
-    private Raza raza;
-
-    @Enumerated(EnumType.STRING)
-    @Column(length = 50)
-    private Patron patron;
-
-    @Enumerated(EnumType.STRING)
-    @Column(length = 20)
-    private Color color;
-
-    @Enumerated(EnumType.STRING)
-    @Column(length = 10)
-    private Sexo sexo;
-
-    @Column(length = 255)
     private String fotografia;
 
-    @Enumerated(EnumType.STRING)
-    @Column(length = 50)
     private Estado estado;
 
-    @Column(columnDefinition = "geography(POINT,4326)", nullable = false)
-    private Point ubicacion;
+    @GeoSpatialIndexed
+    private GeoJsonPoint ubicacion;
 
-    @Column(nullable = false)
-    private Date fecha;
+    // Campo propio (no dentro de caracteristicas) porque es un filtro
+    // central del producto — R-N°5 pide buscar mascotas por comuna, y un
+    // Map dinámico no es cómodo de indexar ni de filtrar con Criteria.
+    @Indexed
+    private String comuna;
 
-    @Column(nullable = false, length = 200)
+    private LocalDateTime fecha;
+
     private String descripcion;
 
+    @Builder.Default
+    private Map<String, Object> caracteristicas = new HashMap<>();
 }

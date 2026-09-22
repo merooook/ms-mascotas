@@ -1,0 +1,22 @@
+services:
+  mascotas:
+    build: .
+    container_name: ms-mascotas
+    restart: unless-stopped
+    environment:
+      SPRING_MVC_SERVLET_PATH: /api/v1
+      MONGODB_URI: ${MONGODB_URI}
+      CONFIG_SERVER_URL: http://config-server:8888
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://discovery-server:8761/eureka/
+      COGNITO_ISSUER_URI: https://cognito-idp.us-east-1.amazonaws.com/${COGNITO_USER_POOL_ID}
+      COGNITO_JWK_SET_URI: https://cognito-idp.us-east-1.amazonaws.com/${COGNITO_USER_POOL_ID}/.well-known/jwks.json
+      COGNITO_CLIENT_ID: ${COGNITO_CLIENT_ID}
+    ports:
+      - "8082:8082"
+    networks:
+      - sanos-y-salvos-network
+
+networks:
+  sanos-y-salvos-network:
+    external: true
+    name: sanos-y-salvos-network

@@ -1,11 +1,11 @@
 package com.duoc.ms_mascotas.DTO;
 
-import com.duoc.ms_mascotas.model.Estado;
-import com.duoc.ms_mascotas.model.Raza;
-import com.duoc.ms_mascotas.model.Patron;
+import java.time.LocalDateTime;
+import java.util.Map;
 
-import com.duoc.ms_mascotas.model.Color;
-import com.duoc.ms_mascotas.model.Sexo;
+import com.duoc.ms_mascotas.model.Estado;
+import com.duoc.ms_mascotas.model.TipoMascota;
+
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -16,15 +16,19 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 @Builder
 public class MascotaResponseDTO {
-    
-    private Long id;
-    private String nombre;  
-    private Raza raza;  
-    private Patron patron;  
-    private Color color; 
-    private String fotografia; 
-    private Estado estado; 
-    private UbicacionDTO ubicacion;  
-    private String descripcion;  
-    private Sexo sexo;
+
+    // usuarioId se saca a propósito: es el identificador del dueño y no debe
+    // exponerse en respuestas públicas (regla de minimización de datos del
+    // proyecto). emailContacto tampoco se incluye aquí nunca — solo lo
+    // devuelve el endpoint interno /internal/mascotas/{id}/contacto.
+    private String idMascota;
+    private String nombre;
+    private TipoMascota tipoMascota;
+    private String fotografia;
+    private Estado estado;
+    private UbicacionDTO ubicacion;
+    private String comuna;
+    private String descripcion;
+    private Map<String, Object> caracteristicas;
+    private LocalDateTime fecha; // ###################################
 }
