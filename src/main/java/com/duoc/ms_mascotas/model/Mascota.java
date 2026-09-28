@@ -42,6 +42,15 @@ public class Mascota {
 
     private Estado estado;
 
+    // Origen del reporte (EXTRAVIADO o ENCONTRADO), fijado una sola vez al crear
+    // y que NUNCA cambia — a diferencia de "estado", que sí se sobrescribe con
+    // PATCH /estado. Sin esto, al reunificar una mascota se pierde para siempre
+    // si originalmente fue reportada como perdida o encontrada, y R-N°8 (perdidas
+    // vs encontradas vs reunidas, en números y porcentajes) no se puede calcular.
+    // Nullable a propósito: los documentos creados antes de este campo no lo
+    // tienen (ver mapToResponseDTO() para el valor por defecto que se les asigna).
+    private Estado tipoReporte;
+
     @GeoSpatialIndexed
     private GeoJsonPoint ubicacion;
 

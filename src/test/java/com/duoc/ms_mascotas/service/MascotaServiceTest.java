@@ -83,6 +83,42 @@ public class MascotaServiceTest {
 	}
 
 	@Test
+	void crearMascotaFijaElTipoReporteSegunElEstadoInicial() {
+		when(mascotaRepository.save(any(Mascota.class))).thenAnswer(inv -> inv.getArgument(0));
+		CrearMascotaDTO dto = new CrearMascotaDTO(TipoMascota.PERRO, "Luna", null,
+				Estado.EXTRAVIADO, null, "Viña del Mar", null, null, "reportante@example.com");
+
+		var respuesta = mascotaService.crearMascota(dto, "usuario-1");
+
+		assertThat(respuesta.getTipoReporte()).isEqualTo(Estado.EXTRAVIADO);
+	}
+
+	@Test
+	void cambiarEstadoNoModificaElTipoReporteOriginal() {
+		mascota.setTipoReporte(Estado.EXTRAVIADO);
+		when(mascotaRepository.findById("mascota-1")).thenReturn(Optional.of(mascota));
+		when(mascotaRepository.save(any(Mascota.class))).thenAnswer(inv -> inv.getArgument(0));
+
+		var respuesta = mascotaService.cambiarEstado("mascota-1", Estado.REUNIFICADO, "usuario-1");
+
+		assertThat(respuesta.getEstado()).isEqualTo(Estado.REUNIFICADO);
+		assertThat(respuesta.getTipoReporte())
+				.as("el origen del reporte no debe cambiar aunque el estado actual sí")
+				.isEqualTo(Estado.EXTRAVIADO);
+	}
+
+	@Test
+	void tipoReporteNuloEnDocumentoAntiguoYaReunificadoQuedaSinClasificar() {
+		mascota.setEstado(Estado.REUNIFICADO);
+		mascota.setTipoReporte(null); // documento creado antes de este campo
+		when(mascotaRepository.findById("mascota-1")).thenReturn(Optional.of(mascota));
+
+		var respuesta = mascotaService.obtenerPorId("mascota-1").orElseThrow();
+
+		assertThat(respuesta.getTipoReporte()).isNull();
+	}
+
+	@Test
 	void laUbicacionPublicaSaleRedondeadaPorPrivacidad() {
 		// -33.456789, -70.987654 son las coordenadas EXACTAS guardadas — la
 		// respuesta pública nunca debe devolver esta precisión.

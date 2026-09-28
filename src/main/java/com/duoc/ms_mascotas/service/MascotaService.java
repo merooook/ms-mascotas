@@ -48,6 +48,7 @@ public class MascotaService {
                 .nombre(dto.getNombre())
                 .fotografia(dto.getFotografia())
                 .estado(dto.getEstado() != null ? dto.getEstado() : Estado.EXTRAVIADO)
+                .tipoReporte(dto.getEstado() != null ? dto.getEstado() : Estado.EXTRAVIADO)
                 .ubicacion(toGeoJsonPoint(dto.getUbicacion()))
                 .comuna(dto.getComuna())
                 .fecha(LocalDateTime.now())
@@ -222,6 +223,13 @@ public class MascotaService {
                 .tipoMascota(mascota.getTipoMascota())
                 .fotografia(mascota.getFotografia())
                 .estado(mascota.getEstado())
+                // documentos creados antes de este campo (tipoReporte == null): si
+                // todavía no fue reunificada, su tipo de reporte es su propio estado
+                // actual; si ya fue reunificada no hay forma de recuperar el origen,
+                // así que queda sin clasificar (null) en vez de inventar un dato.
+                .tipoReporte(mascota.getTipoReporte() != null
+                        ? mascota.getTipoReporte()
+                        : (mascota.getEstado() != Estado.REUNIFICADO ? mascota.getEstado() : null))
                 .ubicacion(toUbicacionDTO(mascota.getUbicacion()))
                 .comuna(mascota.getComuna())
                 .descripcion(mascota.getDescripcion())

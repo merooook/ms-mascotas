@@ -26,6 +26,10 @@ public class MascotaResponseDTO {
     private TipoMascota tipoMascota;
     private String fotografia;
     private Estado estado;
+    // Origen del reporte (EXTRAVIADO/ENCONTRADO), fijo desde la creación — base
+    // de R-N°8 (perdidas/encontradas vs. reunidas). Puede venir null en
+    // documentos antiguos ya reunificados, creados antes de este campo.
+    private Estado tipoReporte;
     private UbicacionDTO ubicacion;
     private String comuna;
     private String descripcion;
