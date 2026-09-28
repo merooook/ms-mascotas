@@ -21,9 +21,12 @@ import com.duoc.ms_mascotas.DTO.CrearMascotaDTO;
 import com.duoc.ms_mascotas.DTO.MascotaResponseDTO;
 import com.duoc.ms_mascotas.model.Estado;
 import com.duoc.ms_mascotas.service.MascotaService;
+import com.duoc.ms_mascotas.service.S3Service;
 
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+
+import java.util.Map;
 
 @RestController
 @RequestMapping("/mascotas")
@@ -31,6 +34,16 @@ import lombok.RequiredArgsConstructor;
 public class MascotaController {
 
     private final MascotaService mascotaService;
+    private final S3Service s3Service;
+
+    @GetMapping("/presigned-url")
+    public ResponseEntity<Map<String, String>> generarUrlFirmada(
+            @RequestHeader("X-User-Id") String usuarioId,
+            @RequestParam String fileName,
+            @RequestParam String contentType,
+            @RequestParam long fileSize) {
+        return ResponseEntity.ok(s3Service.generarUrlFirmada(fileName, contentType, fileSize));
+    }
 
     @PostMapping
     public ResponseEntity<MascotaResponseDTO> crearMascota(

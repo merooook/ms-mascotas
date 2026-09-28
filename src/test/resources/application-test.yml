@@ -22,3 +22,8 @@ spring:
 eureka:
   client:
     enabled: false   # no intentar registrarse en Eureka durante los tests
+
+aws:
+  s3:
+    bucket-name: test-bucket
+    region: us-east-1
