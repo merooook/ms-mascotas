@@ -8,6 +8,7 @@ import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import java.util.Optional;
@@ -27,12 +28,16 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import com.duoc.ms_mascotas.DTO.MascotaResponseDTO;
 import com.duoc.ms_mascotas.service.MascotaService;
+import com.duoc.ms_mascotas.service.S3Service;
 
 @ExtendWith(MockitoExtension.class)
 public class MascotaControllerTest {
 
 	@Mock
 	private MascotaService mascotaService;
+
+	@Mock
+	private S3Service s3Service;
 
 	@InjectMocks
 	private MascotaController mascotaController;
@@ -98,6 +103,39 @@ public class MascotaControllerTest {
 
 		mockMvc.perform(get("/mascotas/desconocida"))
 				.andExpect(status().isNotFound());
+	}
+
+	@Test
+	void generarUrlFirmadaDevuelveUrlYKeyDelServicio() throws Exception {
+		when(s3Service.generarUrlFirmada("foto.jpg", "image/jpeg", 12345L))
+				.thenReturn(java.util.Map.of("url", "https://test-bucket.s3.amazonaws.com/foto", "key", "mascotas/foto.jpg"));
+
+		mockMvc.perform(get("/mascotas/presigned-url")
+					.header("X-User-Id", "usuario-1")
+					.param("fileName", "foto.jpg")
+					.param("contentType", "image/jpeg")
+					.param("fileSize", "12345"))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.url").value("https://test-bucket.s3.amazonaws.com/foto"))
+				.andExpect(jsonPath("$.key").value("mascotas/foto.jpg"));
+
+		verify(s3Service).generarUrlFirmada("foto.jpg", "image/jpeg", 12345L);
+	}
+
+	@Test
+	void generarUrlFirmadaSinParametrosObligatoriosRespondeBadRequest() throws Exception {
+		mockMvc.perform(get("/mascotas/presigned-url")
+					.header("X-User-Id", "usuario-1"))
+				.andExpect(status().isBadRequest());
+	}
+
+	@Test
+	void generarUrlFirmadaSinHeaderDeUsuarioRespondeBadRequest() throws Exception {
+		mockMvc.perform(get("/mascotas/presigned-url")
+					.param("fileName", "foto.jpg")
+					.param("contentType", "image/jpeg")
+					.param("fileSize", "12345"))
+				.andExpect(status().isBadRequest());
 	}
 
 	// Antes de agregar spring-boot-starter-validation al pom, este mismo

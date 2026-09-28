@@ -148,6 +148,32 @@ public class MascotaServiceTest {
 	}
 
 	@Test
+	void actualizarMascotaSoloModificaLosCamposEnviados() {
+		mascota.setComuna("Santiago");
+		mascota.setFotografia("https://imagenes.example/luna.jpg");
+		when(mascotaRepository.findById("mascota-1")).thenReturn(Optional.of(mascota));
+		when(mascotaRepository.save(any(Mascota.class))).thenAnswer(inv -> inv.getArgument(0));
+		ActualizarMascotaDTO dto = new ActualizarMascotaDTO(null, null, "Valparaíso", null, null, null);
+
+		var respuesta = mascotaService.actualizarMascota("mascota-1", dto, "usuario-1");
+
+		assertThat(respuesta.getComuna()).isEqualTo("Valparaíso");
+		assertThat(mascota.getFotografia()).isEqualTo("https://imagenes.example/luna.jpg");
+		assertThat(mascota.getEstado()).isEqualTo(Estado.EXTRAVIADO);
+		verify(mascotaRepository).save(mascota);
+	}
+
+	@Test
+	void actualizarMascotaInexistenteRespondeConErrorYNoPersiste() {
+		when(mascotaRepository.findById("desconocida")).thenReturn(Optional.empty());
+
+		assertThatThrownBy(() -> mascotaService.actualizarMascota("desconocida", new ActualizarMascotaDTO(), "usuario-1"))
+				.isInstanceOf(IllegalArgumentException.class)
+				.hasMessage("Mascota no encontrada");
+		verify(mascotaRepository, never()).save(any(Mascota.class));
+	}
+
+	@Test
 	void cambiarEstadoRechazaMascotaReunificada() {
 		mascota.setEstado(Estado.REUNIFICADO);
 		when(mascotaRepository.findById("mascota-1")).thenReturn(Optional.of(mascota));
@@ -165,5 +191,15 @@ public class MascotaServiceTest {
 		mascotaService.eliminarMascota("mascota-1", "usuario-1");
 
 		verify(mascotaRepository).deleteById("mascota-1");
+	}
+
+	@Test
+	void eliminarMascotaRechazaUsuarioSinPermiso() {
+		when(mascotaRepository.findById("mascota-1")).thenReturn(Optional.of(mascota));
+
+		assertThatThrownBy(() -> mascotaService.eliminarMascota("mascota-1", "otro-usuario"))
+				.isInstanceOf(IllegalArgumentException.class)
+				.hasMessage("No tienes permiso para eliminar esta mascota");
+		verify(mascotaRepository, never()).deleteById("mascota-1");
 	}
 }
