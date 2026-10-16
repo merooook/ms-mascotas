@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
+import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
@@ -13,8 +14,10 @@ import org.springframework.stereotype.Service;
 
 import com.duoc.ms_mascotas.DTO.ActualizarMascotaDTO;
 import com.duoc.ms_mascotas.DTO.CrearMascotaDTO;
+import com.duoc.ms_mascotas.DTO.MascotaReportadaEvento;
 import com.duoc.ms_mascotas.DTO.MascotaResponseDTO;
 import com.duoc.ms_mascotas.DTO.UbicacionDTO;
+import com.duoc.ms_mascotas.config.RabbitMQConfig;
 import com.duoc.ms_mascotas.model.Estado;
 import com.duoc.ms_mascotas.model.Mascota;
 import com.duoc.ms_mascotas.repository.MascotaRepository;
@@ -36,6 +39,7 @@ public class MascotaService {
 
     private final MascotaRepository mascotaRepository;
     private final MongoTemplate mongoTemplate;
+    private final RabbitTemplate rabbitTemplate;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     public MascotaResponseDTO crearMascota(CrearMascotaDTO dto, String usuarioId) {
@@ -58,7 +62,25 @@ public class MascotaService {
 
         Mascota guardada = mascotaRepository.save(mascota);
         log.info("Mascota creada exitosamente: idMascota={}, nombre='{}'", guardada.getIdMascota(), guardada.getNombre());
+        publicarMascotaReportada(guardada);
         return mapToResponseDTO(guardada);
+    }
+
+    // Solo si hay ubicación: sin lat/lng, ms-alertas no tiene con qué crear
+    // la alerta geográfica de zona (radio de 3 km alrededor del punto).
+    private void publicarMascotaReportada(Mascota mascota) {
+        if (mascota.getUbicacion() == null) {
+            log.debug("Mascota sin ubicación, no se publica evento de alerta: idMascota={}", mascota.getIdMascota());
+            return;
+        }
+
+        MascotaReportadaEvento evento = new MascotaReportadaEvento(
+                mascota.getIdMascota(),
+                mascota.getUbicacion().getY(),
+                mascota.getUbicacion().getX());
+
+        rabbitTemplate.convertAndSend(RabbitMQConfig.EXCHANGE, RabbitMQConfig.ROUTING_KEY_MASCOTA_REPORTADA, evento);
+        log.info("Evento mascota.reportada publicado: idMascota={}", mascota.getIdMascota());
     }
 
     public Page<MascotaResponseDTO> listarTodas(Estado estado, Pageable pageable) {

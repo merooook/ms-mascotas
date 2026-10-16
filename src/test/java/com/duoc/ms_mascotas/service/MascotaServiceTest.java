@@ -17,6 +17,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
@@ -25,6 +26,8 @@ import org.springframework.data.mongodb.core.geo.GeoJsonPoint;
 
 import com.duoc.ms_mascotas.DTO.ActualizarMascotaDTO;
 import com.duoc.ms_mascotas.DTO.CrearMascotaDTO;
+import com.duoc.ms_mascotas.DTO.MascotaReportadaEvento;
+import com.duoc.ms_mascotas.config.RabbitMQConfig;
 import com.duoc.ms_mascotas.model.Estado;
 import com.duoc.ms_mascotas.model.Mascota;
 import com.duoc.ms_mascotas.model.TipoMascota;
@@ -38,6 +41,9 @@ public class MascotaServiceTest {
 
 	@Mock
 	private MongoTemplate mongoTemplate;
+
+	@Mock
+	private RabbitTemplate rabbitTemplate;
 
 	@InjectMocks
 	private MascotaService mascotaService;
@@ -131,6 +137,35 @@ public class MascotaServiceTest {
 
 		assertThat(respuesta.getUbicacion().getLatitud()).isEqualTo(-33.46);
 		assertThat(respuesta.getUbicacion().getLongitud()).isEqualTo(-70.99);
+	}
+
+	@Test
+	void crearMascotaConUbicacionPublicaEventoParaAlertaDeZona() {
+		mascota.setUbicacion(new GeoJsonPoint(-70.987654, -33.456789));
+		when(mascotaRepository.save(any(Mascota.class))).thenReturn(mascota);
+		CrearMascotaDTO dto = new CrearMascotaDTO(TipoMascota.PERRO, "Luna", null,
+				Estado.EXTRAVIADO, null, "Viña del Mar", null, null, "reportante@example.com");
+
+		mascotaService.crearMascota(dto, "usuario-1");
+
+		org.mockito.ArgumentCaptor<MascotaReportadaEvento> captor =
+				org.mockito.ArgumentCaptor.forClass(MascotaReportadaEvento.class);
+		verify(rabbitTemplate).convertAndSend(
+				eq(RabbitMQConfig.EXCHANGE), eq(RabbitMQConfig.ROUTING_KEY_MASCOTA_REPORTADA), captor.capture());
+		assertThat(captor.getValue().getMascotaId()).isEqualTo("mascota-1");
+		assertThat(captor.getValue().getLatitud()).isEqualTo(-33.456789);
+		assertThat(captor.getValue().getLongitud()).isEqualTo(-70.987654);
+	}
+
+	@Test
+	void crearMascotaSinUbicacionNoPublicaEventoDeAlerta() {
+		when(mascotaRepository.save(any(Mascota.class))).thenReturn(mascota);
+		CrearMascotaDTO dto = new CrearMascotaDTO(TipoMascota.PERRO, "Luna", null,
+				Estado.EXTRAVIADO, null, "Viña del Mar", null, null, "reportante@example.com");
+
+		mascotaService.crearMascota(dto, "usuario-1");
+
+		verify(rabbitTemplate, never()).convertAndSend(any(String.class), any(String.class), any(Object.class));
 	}
 
 	@Test
