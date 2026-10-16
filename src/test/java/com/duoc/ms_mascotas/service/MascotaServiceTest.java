@@ -18,7 +18,6 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.geo.GeoJsonPoint;
@@ -26,6 +25,7 @@ import org.springframework.data.mongodb.core.geo.GeoJsonPoint;
 import com.duoc.ms_mascotas.DTO.ActualizarMascotaDTO;
 import com.duoc.ms_mascotas.DTO.CrearMascotaDTO;
 import com.duoc.ms_mascotas.model.Estado;
+import com.duoc.ms_mascotas.model.EstadoModeracion;
 import com.duoc.ms_mascotas.model.Mascota;
 import com.duoc.ms_mascotas.model.TipoMascota;
 import com.duoc.ms_mascotas.repository.MascotaRepository;
@@ -91,6 +91,61 @@ public class MascotaServiceTest {
 		var respuesta = mascotaService.crearMascota(dto, "usuario-1");
 
 		assertThat(respuesta.getTipoReporte()).isEqualTo(Estado.EXTRAVIADO);
+	}
+
+	@Test
+	void crearMascotaQuedaPendienteDeModeracion() {
+		when(mascotaRepository.save(any(Mascota.class))).thenAnswer(inv -> inv.getArgument(0));
+		CrearMascotaDTO dto = new CrearMascotaDTO(TipoMascota.PERRO, "Luna", null,
+				Estado.EXTRAVIADO, null, "Viña del Mar", null, null, "reportante@example.com");
+
+		var respuesta = mascotaService.crearMascota(dto, "usuario-1");
+
+		assertThat(respuesta.getEstadoModeracion()).isEqualTo(EstadoModeracion.PENDIENTE);
+	}
+
+	@Test
+	void reportePendienteNoSePuedeConsultarPublicamente() {
+		mascota.setEstadoModeracion(EstadoModeracion.PENDIENTE);
+		when(mascotaRepository.findById("mascota-1")).thenReturn(Optional.of(mascota));
+
+		assertThat(mascotaService.obtenerPorId("mascota-1")).isEmpty();
+		assertThat(mascotaService.obtenerParaContacto("mascota-1")).isEmpty();
+	}
+
+	@Test
+	void aprobarReportePendienteLoHacePublicable() {
+		mascota.setEstadoModeracion(EstadoModeracion.PENDIENTE);
+		when(mascotaRepository.findById("mascota-1")).thenReturn(Optional.of(mascota));
+		when(mascotaRepository.save(any(Mascota.class))).thenAnswer(inv -> inv.getArgument(0));
+
+		var respuesta = mascotaService.aprobarMascota("mascota-1");
+
+		assertThat(respuesta.getEstadoModeracion()).isEqualTo(EstadoModeracion.APROBADA);
+		assertThat(mascotaService.obtenerPorId("mascota-1")).isPresent();
+	}
+
+	@Test
+	void rechazarReportePendienteLoMantieneOculto() {
+		mascota.setEstadoModeracion(EstadoModeracion.PENDIENTE);
+		when(mascotaRepository.findById("mascota-1")).thenReturn(Optional.of(mascota));
+		when(mascotaRepository.save(any(Mascota.class))).thenAnswer(inv -> inv.getArgument(0));
+
+		var respuesta = mascotaService.rechazarMascota("mascota-1");
+
+		assertThat(respuesta.getEstadoModeracion()).isEqualTo(EstadoModeracion.RECHAZADA);
+		assertThat(mascotaService.obtenerPorId("mascota-1")).isEmpty();
+	}
+
+	@Test
+	void noSePuedeModerarReporteQueYaNoEstaPendiente() {
+		mascota.setEstadoModeracion(EstadoModeracion.APROBADA);
+		when(mascotaRepository.findById("mascota-1")).thenReturn(Optional.of(mascota));
+
+		assertThatThrownBy(() -> mascotaService.rechazarMascota("mascota-1"))
+				.isInstanceOf(IllegalArgumentException.class)
+				.hasMessage("Solo se pueden moderar reportes pendientes");
+		verify(mascotaRepository, never()).save(any(Mascota.class));
 	}
 
 	@Test
@@ -164,13 +219,14 @@ public class MascotaServiceTest {
 	@Test
 	void listarTodasFiltraPorEstado() {
 		PageRequest pageable = PageRequest.of(0, 10);
-		when(mascotaRepository.findByEstado(Estado.EXTRAVIADO, pageable))
-				.thenReturn(new PageImpl<>(java.util.List.of(mascota), pageable, 1));
+		when(mongoTemplate.count(any(), eq(Mascota.class))).thenReturn(1L);
+		when(mongoTemplate.find(any(), eq(Mascota.class))).thenReturn(java.util.List.of(mascota));
 
 		Page<?> resultado = mascotaService.listarTodas(Estado.EXTRAVIADO, pageable);
 
 		assertThat(resultado).hasSize(1);
-		verify(mascotaRepository).findByEstado(Estado.EXTRAVIADO, pageable);
+		verify(mongoTemplate).count(any(), eq(Mascota.class));
+		verify(mongoTemplate).find(any(), eq(Mascota.class));
 	}
 
 	@Test
