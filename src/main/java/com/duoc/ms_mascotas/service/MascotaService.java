@@ -168,12 +168,20 @@ public class MascotaService {
     // InternalMascotaController) — genera un token nuevo y de paso invalida
     // cualquier token anterior sin usar, así solo el último correo de
     // contacto puede confirmar la reunificación.
+    //
+    // Solo para reportes EXTRAVIADO: ahí quien recibe el correo de contacto
+    // es siempre el dueño real (el que perdió la mascota). En un reporte
+    // ENCONTRADO, quien lo recibe es quien encontró la mascota, no el dueño
+    // — no tiene autoridad para confirmar la reunificación de otra persona.
     public Mascota generarTokenConfirmacion(String id) {
         Mascota mascota = mascotaRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("Mascota no encontrada"));
 
         if (mascota.getEstado() == Estado.REUNIFICADO) {
             return mascota; // ya está cerrada, no tiene sentido emitir un token
+        }
+        if (mascota.getTipoReporte() != Estado.EXTRAVIADO) {
+            return mascota; // ENCONTRADO (o sin tipoReporte): sin token, el correo sale sin botón
         }
 
         mascota.setTokenReunificacion(UUID.randomUUID().toString());

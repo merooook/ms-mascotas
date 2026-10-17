@@ -129,7 +129,8 @@ public class MascotaServiceTest {
 	}
 
 	@Test
-	void generarTokenConfirmacionAsignaTokenYExpiracionFutura() {
+	void generarTokenConfirmacionAsignaTokenYExpiracionFuturaParaReporteExtraviado() {
+		mascota.setTipoReporte(Estado.EXTRAVIADO);
 		when(mascotaRepository.findById("mascota-1")).thenReturn(Optional.of(mascota));
 		when(mascotaRepository.save(any(Mascota.class))).thenAnswer(inv -> inv.getArgument(0));
 
@@ -142,6 +143,19 @@ public class MascotaServiceTest {
 	@Test
 	void generarTokenConfirmacionNoHaceNadaSiYaEstaReunificada() {
 		mascota.setEstado(Estado.REUNIFICADO);
+		when(mascotaRepository.findById("mascota-1")).thenReturn(Optional.of(mascota));
+
+		Mascota resultado = mascotaService.generarTokenConfirmacion("mascota-1");
+
+		assertThat(resultado.getTokenReunificacion()).isNull();
+		verify(mascotaRepository, never()).save(any(Mascota.class));
+	}
+
+	@Test
+	void generarTokenConfirmacionNoHaceNadaSiElReporteEsEncontrado() {
+		// quien recibe el correo de un reporte ENCONTRADO es quien encontró la
+		// mascota, no el dueño real — no tiene autoridad para confirmar
+		mascota.setTipoReporte(Estado.ENCONTRADO);
 		when(mascotaRepository.findById("mascota-1")).thenReturn(Optional.of(mascota));
 
 		Mascota resultado = mascotaService.generarTokenConfirmacion("mascota-1");
