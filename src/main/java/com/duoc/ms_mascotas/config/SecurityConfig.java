@@ -46,6 +46,10 @@ public class SecurityConfig {
                 // Listado y detalle son de acceso libre para invitados (misma
                 // decisión de UX que ms-alertas: GET /alertas, /alertas/zona).
                 .requestMatchers(HttpMethod.GET, "/mascotas", "/mascotas/{id}").permitAll()
+                // Público a propósito: lo abre quien hace clic en el link del
+                // correo de contacto, sin sesión. El token (no el JWT) es la
+                // autorización acá — ver MascotaService.confirmarReunificacion.
+                .requestMatchers(HttpMethod.POST, "/mascotas/{id}/confirmar-reunificacion").permitAll()
                 .anyRequest().authenticated()
             )
             .oauth2ResourceServer(oauth2 -> oauth2.jwt(jwt -> jwt.decoder(jwtDecoder())));

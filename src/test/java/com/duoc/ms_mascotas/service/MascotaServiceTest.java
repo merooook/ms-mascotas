@@ -8,6 +8,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.time.LocalDateTime;
 import java.util.Map;
 import java.util.Optional;
 
@@ -125,6 +126,80 @@ public class MascotaServiceTest {
 		mascotaService.cambiarEstado("mascota-1", Estado.REUNIFICADO, "usuario-1");
 
 		verify(snsEventPublisher, never()).publicar(eq(MascotaService.TIPO_EVENTO_MASCOTA_REUNIFICADA), any(Object.class));
+	}
+
+	@Test
+	void generarTokenConfirmacionAsignaTokenYExpiracionFutura() {
+		when(mascotaRepository.findById("mascota-1")).thenReturn(Optional.of(mascota));
+		when(mascotaRepository.save(any(Mascota.class))).thenAnswer(inv -> inv.getArgument(0));
+
+		Mascota resultado = mascotaService.generarTokenConfirmacion("mascota-1");
+
+		assertThat(resultado.getTokenReunificacion()).isNotBlank();
+		assertThat(resultado.getTokenReunificacionExpira()).isAfter(LocalDateTime.now());
+	}
+
+	@Test
+	void generarTokenConfirmacionNoHaceNadaSiYaEstaReunificada() {
+		mascota.setEstado(Estado.REUNIFICADO);
+		when(mascotaRepository.findById("mascota-1")).thenReturn(Optional.of(mascota));
+
+		Mascota resultado = mascotaService.generarTokenConfirmacion("mascota-1");
+
+		assertThat(resultado.getTokenReunificacion()).isNull();
+		verify(mascotaRepository, never()).save(any(Mascota.class));
+	}
+
+	@Test
+	void confirmarReunificacionConTokenValidoCambiaEstadoYPublicaEvento() {
+		mascota.setEmailContacto("duena@example.com");
+		mascota.setTokenReunificacion("token-valido");
+		mascota.setTokenReunificacionExpira(LocalDateTime.now().plusDays(1));
+		when(mascotaRepository.findById("mascota-1")).thenReturn(Optional.of(mascota));
+		when(mascotaRepository.save(any(Mascota.class))).thenAnswer(inv -> inv.getArgument(0));
+
+		var resultado = mascotaService.confirmarReunificacion("mascota-1", "token-valido");
+
+		assertThat(resultado).isEqualTo(MascotaService.ResultadoConfirmacion.CONFIRMADA);
+		assertThat(mascota.getEstado()).isEqualTo(Estado.REUNIFICADO);
+		assertThat(mascota.getTokenReunificacion()).isNull();
+		verify(snsEventPublisher).publicar(eq(MascotaService.TIPO_EVENTO_MASCOTA_REUNIFICADA), any(Object.class));
+	}
+
+	@Test
+	void confirmarReunificacionConTokenIncorrectoNoCambiaNada() {
+		mascota.setTokenReunificacion("token-real");
+		mascota.setTokenReunificacionExpira(LocalDateTime.now().plusDays(1));
+		when(mascotaRepository.findById("mascota-1")).thenReturn(Optional.of(mascota));
+
+		var resultado = mascotaService.confirmarReunificacion("mascota-1", "token-equivocado");
+
+		assertThat(resultado).isEqualTo(MascotaService.ResultadoConfirmacion.TOKEN_INVALIDO);
+		assertThat(mascota.getEstado()).isEqualTo(Estado.EXTRAVIADO);
+		verify(mascotaRepository, never()).save(any(Mascota.class));
+	}
+
+	@Test
+	void confirmarReunificacionConTokenVencidoNoCambiaNada() {
+		mascota.setTokenReunificacion("token-valido");
+		mascota.setTokenReunificacionExpira(LocalDateTime.now().minusMinutes(1));
+		when(mascotaRepository.findById("mascota-1")).thenReturn(Optional.of(mascota));
+
+		var resultado = mascotaService.confirmarReunificacion("mascota-1", "token-valido");
+
+		assertThat(resultado).isEqualTo(MascotaService.ResultadoConfirmacion.TOKEN_EXPIRADO);
+		verify(mascotaRepository, never()).save(any(Mascota.class));
+	}
+
+	@Test
+	void confirmarReunificacionSiYaEstaReunificadaLoInformaSinTocarNada() {
+		mascota.setEstado(Estado.REUNIFICADO);
+		when(mascotaRepository.findById("mascota-1")).thenReturn(Optional.of(mascota));
+
+		var resultado = mascotaService.confirmarReunificacion("mascota-1", "cualquier-token");
+
+		assertThat(resultado).isEqualTo(MascotaService.ResultadoConfirmacion.YA_REUNIFICADA);
+		verify(mascotaRepository, never()).save(any(Mascota.class));
 	}
 
 	@Test
