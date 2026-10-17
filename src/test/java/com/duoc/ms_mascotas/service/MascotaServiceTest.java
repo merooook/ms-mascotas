@@ -99,6 +99,46 @@ public class MascotaServiceTest {
 	}
 
 	@Test
+	void cambiarEstadoAReunificadoConCorreoPublicaEventoDeReunificacion() {
+		mascota.setEmailContacto("duena@example.com");
+		mascota.setNombre("Firulais");
+		when(mascotaRepository.findById("mascota-1")).thenReturn(Optional.of(mascota));
+		when(mascotaRepository.save(any(Mascota.class))).thenAnswer(inv -> inv.getArgument(0));
+
+		mascotaService.cambiarEstado("mascota-1", Estado.REUNIFICADO, "usuario-1");
+
+		org.mockito.ArgumentCaptor<Object> captor = org.mockito.ArgumentCaptor.forClass(Object.class);
+		verify(snsEventPublisher).publicar(eq(MascotaService.TIPO_EVENTO_MASCOTA_REUNIFICADA), captor.capture());
+		com.duoc.ms_mascotas.DTO.MascotaReunificadaEvento evento =
+				(com.duoc.ms_mascotas.DTO.MascotaReunificadaEvento) captor.getValue();
+		assertThat(evento.getMascotaId()).isEqualTo("mascota-1");
+		assertThat(evento.getNombreMascota()).isEqualTo("Firulais");
+		assertThat(evento.getEmailContacto()).isEqualTo("duena@example.com");
+	}
+
+	@Test
+	void cambiarEstadoAReunificadoSinCorreoNoPublicaEvento() {
+		// mascota del setUp() no trae emailContacto
+		when(mascotaRepository.findById("mascota-1")).thenReturn(Optional.of(mascota));
+		when(mascotaRepository.save(any(Mascota.class))).thenAnswer(inv -> inv.getArgument(0));
+
+		mascotaService.cambiarEstado("mascota-1", Estado.REUNIFICADO, "usuario-1");
+
+		verify(snsEventPublisher, never()).publicar(eq(MascotaService.TIPO_EVENTO_MASCOTA_REUNIFICADA), any(Object.class));
+	}
+
+	@Test
+	void cambiarEstadoAEncontradoNoPublicaEventoDeReunificacion() {
+		mascota.setEmailContacto("duena@example.com");
+		when(mascotaRepository.findById("mascota-1")).thenReturn(Optional.of(mascota));
+		when(mascotaRepository.save(any(Mascota.class))).thenAnswer(inv -> inv.getArgument(0));
+
+		mascotaService.cambiarEstado("mascota-1", Estado.ENCONTRADO, "usuario-1");
+
+		verify(snsEventPublisher, never()).publicar(eq(MascotaService.TIPO_EVENTO_MASCOTA_REUNIFICADA), any(Object.class));
+	}
+
+	@Test
 	void cambiarEstadoNoModificaElTipoReporteOriginal() {
 		mascota.setTipoReporte(Estado.EXTRAVIADO);
 		when(mascotaRepository.findById("mascota-1")).thenReturn(Optional.of(mascota));

@@ -14,6 +14,7 @@ import org.springframework.stereotype.Service;
 import com.duoc.ms_mascotas.DTO.ActualizarMascotaDTO;
 import com.duoc.ms_mascotas.DTO.CrearMascotaDTO;
 import com.duoc.ms_mascotas.DTO.MascotaReportadaEvento;
+import com.duoc.ms_mascotas.DTO.MascotaReunificadaEvento;
 import com.duoc.ms_mascotas.DTO.MascotaResponseDTO;
 import com.duoc.ms_mascotas.DTO.UbicacionDTO;
 import com.duoc.ms_mascotas.messaging.SnsEventPublisher;
@@ -42,6 +43,7 @@ public class MascotaService {
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     public static final String TIPO_EVENTO_MASCOTA_REPORTADA = "mascota.reportada";
+    public static final String TIPO_EVENTO_MASCOTA_REUNIFICADA = "mascota.reunificada";
 
     public MascotaResponseDTO crearMascota(CrearMascotaDTO dto, String usuarioId) {
         log.info("Creando mascota: nombre='{}', tipo={}, usuarioId={}", dto.getNombre(), dto.getTipoMascota(), usuarioId);
@@ -82,6 +84,24 @@ public class MascotaService {
 
         snsEventPublisher.publicar(TIPO_EVENTO_MASCOTA_REPORTADA, evento);
         log.info("Evento mascota.reportada publicado: idMascota={}", mascota.getIdMascota());
+    }
+
+    // Avisa a quien creó ESTE reporte (dueño si era EXTRAVIADO, quien la
+    // encontró si era ENCONTRADO) — cada reporte se notifica a sí mismo, sin
+    // cruzarse con el otro. Sin correo guardado, no hay a quién avisar.
+    private void publicarMascotaReunificada(Mascota mascota) {
+        if (mascota.getEmailContacto() == null || mascota.getEmailContacto().isBlank()) {
+            log.debug("Mascota sin emailContacto, no se publica evento de reunificacion: idMascota={}", mascota.getIdMascota());
+            return;
+        }
+
+        MascotaReunificadaEvento evento = new MascotaReunificadaEvento(
+                mascota.getIdMascota(),
+                mascota.getNombre(),
+                mascota.getEmailContacto());
+
+        snsEventPublisher.publicar(TIPO_EVENTO_MASCOTA_REUNIFICADA, evento);
+        log.info("Evento mascota.reunificada publicado: idMascota={}", mascota.getIdMascota());
     }
 
     public Page<MascotaResponseDTO> listarTodas(Estado estado, Pageable pageable) {
@@ -192,6 +212,9 @@ public class MascotaService {
 
         Mascota actualizada = mascotaRepository.save(mascota);
         log.info("Estado cambiado exitosamente: idMascota={}, estado={}", id, nuevoEstado);
+        if (nuevoEstado == Estado.REUNIFICADO) {
+            publicarMascotaReunificada(actualizada);
+        }
         return mapToResponseDTO(actualizada);
     }
 
