@@ -6,7 +6,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
-import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
@@ -17,7 +16,7 @@ import com.duoc.ms_mascotas.DTO.CrearMascotaDTO;
 import com.duoc.ms_mascotas.DTO.MascotaReportadaEvento;
 import com.duoc.ms_mascotas.DTO.MascotaResponseDTO;
 import com.duoc.ms_mascotas.DTO.UbicacionDTO;
-import com.duoc.ms_mascotas.config.RabbitMQConfig;
+import com.duoc.ms_mascotas.messaging.SnsEventPublisher;
 import com.duoc.ms_mascotas.model.Estado;
 import com.duoc.ms_mascotas.model.Mascota;
 import com.duoc.ms_mascotas.repository.MascotaRepository;
@@ -39,8 +38,10 @@ public class MascotaService {
 
     private final MascotaRepository mascotaRepository;
     private final MongoTemplate mongoTemplate;
-    private final RabbitTemplate rabbitTemplate;
+    private final SnsEventPublisher snsEventPublisher;
     private final ObjectMapper objectMapper = new ObjectMapper();
+
+    public static final String TIPO_EVENTO_MASCOTA_REPORTADA = "mascota.reportada";
 
     public MascotaResponseDTO crearMascota(CrearMascotaDTO dto, String usuarioId) {
         log.info("Creando mascota: nombre='{}', tipo={}, usuarioId={}", dto.getNombre(), dto.getTipoMascota(), usuarioId);
@@ -79,7 +80,7 @@ public class MascotaService {
                 mascota.getUbicacion().getY(),
                 mascota.getUbicacion().getX());
 
-        rabbitTemplate.convertAndSend(RabbitMQConfig.EXCHANGE, RabbitMQConfig.ROUTING_KEY_MASCOTA_REPORTADA, evento);
+        snsEventPublisher.publicar(TIPO_EVENTO_MASCOTA_REPORTADA, evento);
         log.info("Evento mascota.reportada publicado: idMascota={}", mascota.getIdMascota());
     }
 

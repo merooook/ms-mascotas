@@ -17,7 +17,6 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
@@ -27,7 +26,7 @@ import org.springframework.data.mongodb.core.geo.GeoJsonPoint;
 import com.duoc.ms_mascotas.DTO.ActualizarMascotaDTO;
 import com.duoc.ms_mascotas.DTO.CrearMascotaDTO;
 import com.duoc.ms_mascotas.DTO.MascotaReportadaEvento;
-import com.duoc.ms_mascotas.config.RabbitMQConfig;
+import com.duoc.ms_mascotas.messaging.SnsEventPublisher;
 import com.duoc.ms_mascotas.model.Estado;
 import com.duoc.ms_mascotas.model.Mascota;
 import com.duoc.ms_mascotas.model.TipoMascota;
@@ -43,7 +42,7 @@ public class MascotaServiceTest {
 	private MongoTemplate mongoTemplate;
 
 	@Mock
-	private RabbitTemplate rabbitTemplate;
+	private SnsEventPublisher snsEventPublisher;
 
 	@InjectMocks
 	private MascotaService mascotaService;
@@ -148,13 +147,12 @@ public class MascotaServiceTest {
 
 		mascotaService.crearMascota(dto, "usuario-1");
 
-		org.mockito.ArgumentCaptor<MascotaReportadaEvento> captor =
-				org.mockito.ArgumentCaptor.forClass(MascotaReportadaEvento.class);
-		verify(rabbitTemplate).convertAndSend(
-				eq(RabbitMQConfig.EXCHANGE), eq(RabbitMQConfig.ROUTING_KEY_MASCOTA_REPORTADA), captor.capture());
-		assertThat(captor.getValue().getMascotaId()).isEqualTo("mascota-1");
-		assertThat(captor.getValue().getLatitud()).isEqualTo(-33.456789);
-		assertThat(captor.getValue().getLongitud()).isEqualTo(-70.987654);
+		org.mockito.ArgumentCaptor<Object> captor = org.mockito.ArgumentCaptor.forClass(Object.class);
+		verify(snsEventPublisher).publicar(eq(MascotaService.TIPO_EVENTO_MASCOTA_REPORTADA), captor.capture());
+		MascotaReportadaEvento evento = (MascotaReportadaEvento) captor.getValue();
+		assertThat(evento.getMascotaId()).isEqualTo("mascota-1");
+		assertThat(evento.getLatitud()).isEqualTo(-33.456789);
+		assertThat(evento.getLongitud()).isEqualTo(-70.987654);
 	}
 
 	@Test
@@ -165,7 +163,7 @@ public class MascotaServiceTest {
 
 		mascotaService.crearMascota(dto, "usuario-1");
 
-		verify(rabbitTemplate, never()).convertAndSend(any(String.class), any(String.class), any(Object.class));
+		verify(snsEventPublisher, never()).publicar(any(String.class), any(Object.class));
 	}
 
 	@Test
