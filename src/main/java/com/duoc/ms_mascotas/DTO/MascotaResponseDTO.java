@@ -4,6 +4,7 @@ import java.time.LocalDateTime;
 import java.util.Map;
 
 import com.duoc.ms_mascotas.model.Estado;
+import com.duoc.ms_mascotas.model.EstadoModeracion;
 import com.duoc.ms_mascotas.model.TipoMascota;
 
 import lombok.AllArgsConstructor;
@@ -26,6 +27,7 @@ public class MascotaResponseDTO {
     private TipoMascota tipoMascota;
     private String fotografia;
     private Estado estado;
+    private EstadoModeracion estadoModeracion;
     // Origen del reporte (EXTRAVIADO/ENCONTRADO), fijo desde la creación — base
     // de R-N°8 (perdidas/encontradas vs. reunidas). Puede venir null en
     // documentos antiguos ya reunificados, creados antes de este campo.
