@@ -1,12 +1,13 @@
 package com.duoc.ms_mascotas.service;
 
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.UUID;
 
-import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
@@ -15,9 +16,10 @@ import org.springframework.stereotype.Service;
 import com.duoc.ms_mascotas.DTO.ActualizarMascotaDTO;
 import com.duoc.ms_mascotas.DTO.CrearMascotaDTO;
 import com.duoc.ms_mascotas.DTO.MascotaReportadaEvento;
+import com.duoc.ms_mascotas.DTO.MascotaReunificadaEvento;
 import com.duoc.ms_mascotas.DTO.MascotaResponseDTO;
 import com.duoc.ms_mascotas.DTO.UbicacionDTO;
-import com.duoc.ms_mascotas.config.RabbitMQConfig;
+import com.duoc.ms_mascotas.messaging.SnsEventPublisher;
 import com.duoc.ms_mascotas.model.Estado;
 import com.duoc.ms_mascotas.model.Mascota;
 import com.duoc.ms_mascotas.repository.MascotaRepository;
@@ -39,8 +41,15 @@ public class MascotaService {
 
     private final MascotaRepository mascotaRepository;
     private final MongoTemplate mongoTemplate;
-    private final RabbitTemplate rabbitTemplate;
+    private final SnsEventPublisher snsEventPublisher;
     private final ObjectMapper objectMapper = new ObjectMapper();
+
+    public static final String TIPO_EVENTO_MASCOTA_REPORTADA = "mascota.reportada";
+    public static final String TIPO_EVENTO_MASCOTA_REUNIFICADA = "mascota.reunificada";
+
+    private static final Duration DURACION_TOKEN_CONFIRMACION = Duration.ofDays(7);
+
+    public enum ResultadoConfirmacion { CONFIRMADA, YA_REUNIFICADA, TOKEN_INVALIDO, TOKEN_EXPIRADO }
 
     public MascotaResponseDTO crearMascota(CrearMascotaDTO dto, String usuarioId) {
         log.info("Creando mascota: nombre='{}', tipo={}, usuarioId={}", dto.getNombre(), dto.getTipoMascota(), usuarioId);
@@ -79,8 +88,26 @@ public class MascotaService {
                 mascota.getUbicacion().getY(),
                 mascota.getUbicacion().getX());
 
-        rabbitTemplate.convertAndSend(RabbitMQConfig.EXCHANGE, RabbitMQConfig.ROUTING_KEY_MASCOTA_REPORTADA, evento);
+        snsEventPublisher.publicar(TIPO_EVENTO_MASCOTA_REPORTADA, evento);
         log.info("Evento mascota.reportada publicado: idMascota={}", mascota.getIdMascota());
+    }
+
+    // Avisa a quien creó ESTE reporte (dueño si era EXTRAVIADO, quien la
+    // encontró si era ENCONTRADO) — cada reporte se notifica a sí mismo, sin
+    // cruzarse con el otro. Sin correo guardado, no hay a quién avisar.
+    private void publicarMascotaReunificada(Mascota mascota) {
+        if (mascota.getEmailContacto() == null || mascota.getEmailContacto().isBlank()) {
+            log.debug("Mascota sin emailContacto, no se publica evento de reunificacion: idMascota={}", mascota.getIdMascota());
+            return;
+        }
+
+        MascotaReunificadaEvento evento = new MascotaReunificadaEvento(
+                mascota.getIdMascota(),
+                mascota.getNombre(),
+                mascota.getEmailContacto());
+
+        snsEventPublisher.publicar(TIPO_EVENTO_MASCOTA_REUNIFICADA, evento);
+        log.info("Evento mascota.reunificada publicado: idMascota={}", mascota.getIdMascota());
     }
 
     public Page<MascotaResponseDTO> listarTodas(Estado estado, Pageable pageable) {
@@ -137,6 +164,61 @@ public class MascotaService {
         return mascotaRepository.findById(id);
     }
 
+    // Se llama cada vez que alguien contacta sobre esta mascota (ver
+    // InternalMascotaController) — genera un token nuevo y de paso invalida
+    // cualquier token anterior sin usar, así solo el último correo de
+    // contacto puede confirmar la reunificación.
+    //
+    // Solo para reportes EXTRAVIADO: ahí quien recibe el correo de contacto
+    // es siempre el dueño real (el que perdió la mascota). En un reporte
+    // ENCONTRADO, quien lo recibe es quien encontró la mascota, no el dueño
+    // — no tiene autoridad para confirmar la reunificación de otra persona.
+    public Mascota generarTokenConfirmacion(String id) {
+        Mascota mascota = mascotaRepository.findById(id)
+                .orElseThrow(() -> new IllegalArgumentException("Mascota no encontrada"));
+
+        if (mascota.getEstado() == Estado.REUNIFICADO) {
+            return mascota; // ya está cerrada, no tiene sentido emitir un token
+        }
+        if (mascota.getTipoReporte() != Estado.EXTRAVIADO) {
+            return mascota; // ENCONTRADO (o sin tipoReporte): sin token, el correo sale sin botón
+        }
+
+        mascota.setTokenReunificacion(UUID.randomUUID().toString());
+        mascota.setTokenReunificacionExpira(LocalDateTime.now().plus(DURACION_TOKEN_CONFIRMACION));
+        return mascotaRepository.save(mascota);
+    }
+
+    // Confirmación pública (sin JWT) desde el link del correo de contacto —
+    // el token hace de autorización en vez de la sesión del dueño.
+    public ResultadoConfirmacion confirmarReunificacion(String id, String token) {
+        Optional<Mascota> opt = mascotaRepository.findById(id);
+        if (opt.isEmpty()) {
+            return ResultadoConfirmacion.TOKEN_INVALIDO;
+        }
+        Mascota mascota = opt.get();
+
+        if (mascota.getEstado() == Estado.REUNIFICADO) {
+            return ResultadoConfirmacion.YA_REUNIFICADA;
+        }
+        if (token == null || token.isBlank() || !token.equals(mascota.getTokenReunificacion())) {
+            return ResultadoConfirmacion.TOKEN_INVALIDO;
+        }
+        if (mascota.getTokenReunificacionExpira() == null
+                || mascota.getTokenReunificacionExpira().isBefore(LocalDateTime.now())) {
+            return ResultadoConfirmacion.TOKEN_EXPIRADO;
+        }
+
+        mascota.setEstado(Estado.REUNIFICADO);
+        mascota.setTokenReunificacion(null);
+        mascota.setTokenReunificacionExpira(null);
+
+        Mascota actualizada = mascotaRepository.save(mascota);
+        log.info("Reunificacion confirmada por token: idMascota={}", id);
+        publicarMascotaReunificada(actualizada);
+        return ResultadoConfirmacion.CONFIRMADA;
+    }
+
     public Page<MascotaResponseDTO> misMascotas(String usuarioId, Pageable pageable) {
         log.debug("Listando mascotas del usuario={}", usuarioId);
         return mascotaRepository.findByUsuarioId(usuarioId, pageable).map(this::mapToResponseDTO);
@@ -188,9 +270,16 @@ public class MascotaService {
 
         validarTransicion(mascota.getEstado(), nuevoEstado);
         mascota.setEstado(nuevoEstado);
+        if (nuevoEstado == Estado.REUNIFICADO) {
+            mascota.setTokenReunificacion(null);
+            mascota.setTokenReunificacionExpira(null);
+        }
 
         Mascota actualizada = mascotaRepository.save(mascota);
         log.info("Estado cambiado exitosamente: idMascota={}, estado={}", id, nuevoEstado);
+        if (nuevoEstado == Estado.REUNIFICADO) {
+            publicarMascotaReunificada(actualizada);
+        }
         return mapToResponseDTO(actualizada);
     }
 

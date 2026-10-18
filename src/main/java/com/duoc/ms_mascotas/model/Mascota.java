@@ -66,4 +66,12 @@ public class Mascota {
 
     @Builder.Default
     private Map<String, Object> caracteristicas = new HashMap<>();
+
+    // Token de un solo uso para que quien contactó por esta mascota (ver
+    // flujo de Contacto) pueda confirmar la reunificación directo desde el
+    // correo, sin necesidad de loguearse. Se regenera cada vez que alguien
+    // contacta de nuevo (el token anterior queda invalidado), y se borra
+    // apenas se usa o al reunificar por la vía normal (botón del dueño).
+    private String tokenReunificacion;
+    private LocalDateTime tokenReunificacionExpira;
 }

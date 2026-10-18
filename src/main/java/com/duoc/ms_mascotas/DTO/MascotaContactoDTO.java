@@ -18,4 +18,7 @@ public class MascotaContactoDTO {
     private String mascotaId;
     private String emailDestino;
     private String nombreMascota;
+    // Para que ms-alertas arme el link de confirmación de reunificación en
+    // el correo de contacto (ver flujo "confirmar desde el correo").
+    private String tokenReunificacion;
 }

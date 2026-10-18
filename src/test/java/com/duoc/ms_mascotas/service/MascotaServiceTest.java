@@ -8,6 +8,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.time.LocalDateTime;
 import java.util.Map;
 import java.util.Optional;
 
@@ -17,7 +18,6 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
@@ -27,7 +27,7 @@ import org.springframework.data.mongodb.core.geo.GeoJsonPoint;
 import com.duoc.ms_mascotas.DTO.ActualizarMascotaDTO;
 import com.duoc.ms_mascotas.DTO.CrearMascotaDTO;
 import com.duoc.ms_mascotas.DTO.MascotaReportadaEvento;
-import com.duoc.ms_mascotas.config.RabbitMQConfig;
+import com.duoc.ms_mascotas.messaging.SnsEventPublisher;
 import com.duoc.ms_mascotas.model.Estado;
 import com.duoc.ms_mascotas.model.Mascota;
 import com.duoc.ms_mascotas.model.TipoMascota;
@@ -43,7 +43,7 @@ public class MascotaServiceTest {
 	private MongoTemplate mongoTemplate;
 
 	@Mock
-	private RabbitTemplate rabbitTemplate;
+	private SnsEventPublisher snsEventPublisher;
 
 	@InjectMocks
 	private MascotaService mascotaService;
@@ -100,6 +100,134 @@ public class MascotaServiceTest {
 	}
 
 	@Test
+	void cambiarEstadoAReunificadoConCorreoPublicaEventoDeReunificacion() {
+		mascota.setEmailContacto("duena@example.com");
+		mascota.setNombre("Firulais");
+		when(mascotaRepository.findById("mascota-1")).thenReturn(Optional.of(mascota));
+		when(mascotaRepository.save(any(Mascota.class))).thenAnswer(inv -> inv.getArgument(0));
+
+		mascotaService.cambiarEstado("mascota-1", Estado.REUNIFICADO, "usuario-1");
+
+		org.mockito.ArgumentCaptor<Object> captor = org.mockito.ArgumentCaptor.forClass(Object.class);
+		verify(snsEventPublisher).publicar(eq(MascotaService.TIPO_EVENTO_MASCOTA_REUNIFICADA), captor.capture());
+		com.duoc.ms_mascotas.DTO.MascotaReunificadaEvento evento =
+				(com.duoc.ms_mascotas.DTO.MascotaReunificadaEvento) captor.getValue();
+		assertThat(evento.getMascotaId()).isEqualTo("mascota-1");
+		assertThat(evento.getNombreMascota()).isEqualTo("Firulais");
+		assertThat(evento.getEmailContacto()).isEqualTo("duena@example.com");
+	}
+
+	@Test
+	void cambiarEstadoAReunificadoSinCorreoNoPublicaEvento() {
+		// mascota del setUp() no trae emailContacto
+		when(mascotaRepository.findById("mascota-1")).thenReturn(Optional.of(mascota));
+		when(mascotaRepository.save(any(Mascota.class))).thenAnswer(inv -> inv.getArgument(0));
+
+		mascotaService.cambiarEstado("mascota-1", Estado.REUNIFICADO, "usuario-1");
+
+		verify(snsEventPublisher, never()).publicar(eq(MascotaService.TIPO_EVENTO_MASCOTA_REUNIFICADA), any(Object.class));
+	}
+
+	@Test
+	void generarTokenConfirmacionAsignaTokenYExpiracionFuturaParaReporteExtraviado() {
+		mascota.setTipoReporte(Estado.EXTRAVIADO);
+		when(mascotaRepository.findById("mascota-1")).thenReturn(Optional.of(mascota));
+		when(mascotaRepository.save(any(Mascota.class))).thenAnswer(inv -> inv.getArgument(0));
+
+		Mascota resultado = mascotaService.generarTokenConfirmacion("mascota-1");
+
+		assertThat(resultado.getTokenReunificacion()).isNotBlank();
+		assertThat(resultado.getTokenReunificacionExpira()).isAfter(LocalDateTime.now());
+	}
+
+	@Test
+	void generarTokenConfirmacionNoHaceNadaSiYaEstaReunificada() {
+		mascota.setEstado(Estado.REUNIFICADO);
+		when(mascotaRepository.findById("mascota-1")).thenReturn(Optional.of(mascota));
+
+		Mascota resultado = mascotaService.generarTokenConfirmacion("mascota-1");
+
+		assertThat(resultado.getTokenReunificacion()).isNull();
+		verify(mascotaRepository, never()).save(any(Mascota.class));
+	}
+
+	@Test
+	void generarTokenConfirmacionNoHaceNadaSiElReporteEsEncontrado() {
+		// quien recibe el correo de un reporte ENCONTRADO es quien encontró la
+		// mascota, no el dueño real — no tiene autoridad para confirmar
+		mascota.setTipoReporte(Estado.ENCONTRADO);
+		when(mascotaRepository.findById("mascota-1")).thenReturn(Optional.of(mascota));
+
+		Mascota resultado = mascotaService.generarTokenConfirmacion("mascota-1");
+
+		assertThat(resultado.getTokenReunificacion()).isNull();
+		verify(mascotaRepository, never()).save(any(Mascota.class));
+	}
+
+	@Test
+	void confirmarReunificacionConTokenValidoCambiaEstadoYPublicaEvento() {
+		mascota.setEmailContacto("duena@example.com");
+		mascota.setTokenReunificacion("token-valido");
+		mascota.setTokenReunificacionExpira(LocalDateTime.now().plusDays(1));
+		when(mascotaRepository.findById("mascota-1")).thenReturn(Optional.of(mascota));
+		when(mascotaRepository.save(any(Mascota.class))).thenAnswer(inv -> inv.getArgument(0));
+
+		var resultado = mascotaService.confirmarReunificacion("mascota-1", "token-valido");
+
+		assertThat(resultado).isEqualTo(MascotaService.ResultadoConfirmacion.CONFIRMADA);
+		assertThat(mascota.getEstado()).isEqualTo(Estado.REUNIFICADO);
+		assertThat(mascota.getTokenReunificacion()).isNull();
+		verify(snsEventPublisher).publicar(eq(MascotaService.TIPO_EVENTO_MASCOTA_REUNIFICADA), any(Object.class));
+	}
+
+	@Test
+	void confirmarReunificacionConTokenIncorrectoNoCambiaNada() {
+		mascota.setTokenReunificacion("token-real");
+		mascota.setTokenReunificacionExpira(LocalDateTime.now().plusDays(1));
+		when(mascotaRepository.findById("mascota-1")).thenReturn(Optional.of(mascota));
+
+		var resultado = mascotaService.confirmarReunificacion("mascota-1", "token-equivocado");
+
+		assertThat(resultado).isEqualTo(MascotaService.ResultadoConfirmacion.TOKEN_INVALIDO);
+		assertThat(mascota.getEstado()).isEqualTo(Estado.EXTRAVIADO);
+		verify(mascotaRepository, never()).save(any(Mascota.class));
+	}
+
+	@Test
+	void confirmarReunificacionConTokenVencidoNoCambiaNada() {
+		mascota.setTokenReunificacion("token-valido");
+		mascota.setTokenReunificacionExpira(LocalDateTime.now().minusMinutes(1));
+		when(mascotaRepository.findById("mascota-1")).thenReturn(Optional.of(mascota));
+
+		var resultado = mascotaService.confirmarReunificacion("mascota-1", "token-valido");
+
+		assertThat(resultado).isEqualTo(MascotaService.ResultadoConfirmacion.TOKEN_EXPIRADO);
+		verify(mascotaRepository, never()).save(any(Mascota.class));
+	}
+
+	@Test
+	void confirmarReunificacionSiYaEstaReunificadaLoInformaSinTocarNada() {
+		mascota.setEstado(Estado.REUNIFICADO);
+		when(mascotaRepository.findById("mascota-1")).thenReturn(Optional.of(mascota));
+
+		var resultado = mascotaService.confirmarReunificacion("mascota-1", "cualquier-token");
+
+		assertThat(resultado).isEqualTo(MascotaService.ResultadoConfirmacion.YA_REUNIFICADA);
+		verify(mascotaRepository, never()).save(any(Mascota.class));
+	}
+
+	@Test
+	void cambiarEstadoAEncontradoNoPublicaEventoDeReunificacion() {
+		mascota.setEmailContacto("duena@example.com");
+		when(mascotaRepository.findById("mascota-1")).thenReturn(Optional.of(mascota));
+		when(mascotaRepository.save(any(Mascota.class))).thenAnswer(inv -> inv.getArgument(0));
+
+		mascotaService.cambiarEstado("mascota-1", Estado.ENCONTRADO, "usuario-1");
+
+		verify(snsEventPublisher, never()).publicar(eq(MascotaService.TIPO_EVENTO_MASCOTA_REUNIFICADA), any(Object.class));
+	}
+
+	@Test
 	void cambiarEstadoNoModificaElTipoReporteOriginal() {
 		mascota.setTipoReporte(Estado.EXTRAVIADO);
 		when(mascotaRepository.findById("mascota-1")).thenReturn(Optional.of(mascota));
@@ -148,13 +276,12 @@ public class MascotaServiceTest {
 
 		mascotaService.crearMascota(dto, "usuario-1");
 
-		org.mockito.ArgumentCaptor<MascotaReportadaEvento> captor =
-				org.mockito.ArgumentCaptor.forClass(MascotaReportadaEvento.class);
-		verify(rabbitTemplate).convertAndSend(
-				eq(RabbitMQConfig.EXCHANGE), eq(RabbitMQConfig.ROUTING_KEY_MASCOTA_REPORTADA), captor.capture());
-		assertThat(captor.getValue().getMascotaId()).isEqualTo("mascota-1");
-		assertThat(captor.getValue().getLatitud()).isEqualTo(-33.456789);
-		assertThat(captor.getValue().getLongitud()).isEqualTo(-70.987654);
+		org.mockito.ArgumentCaptor<Object> captor = org.mockito.ArgumentCaptor.forClass(Object.class);
+		verify(snsEventPublisher).publicar(eq(MascotaService.TIPO_EVENTO_MASCOTA_REPORTADA), captor.capture());
+		MascotaReportadaEvento evento = (MascotaReportadaEvento) captor.getValue();
+		assertThat(evento.getMascotaId()).isEqualTo("mascota-1");
+		assertThat(evento.getLatitud()).isEqualTo(-33.456789);
+		assertThat(evento.getLongitud()).isEqualTo(-70.987654);
 	}
 
 	@Test
@@ -165,7 +292,7 @@ public class MascotaServiceTest {
 
 		mascotaService.crearMascota(dto, "usuario-1");
 
-		verify(rabbitTemplate, never()).convertAndSend(any(String.class), any(String.class), any(Object.class));
+		verify(snsEventPublisher, never()).publicar(any(String.class), any(Object.class));
 	}
 
 	@Test

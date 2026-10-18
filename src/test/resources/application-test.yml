@@ -27,3 +27,6 @@ aws:
   s3:
     bucket-name: test-bucket
     region: us-east-1
+  region: us-east-1
+  sns:
+    topic-arn: arn:aws:sns:us-east-1:000000000000:test-topic

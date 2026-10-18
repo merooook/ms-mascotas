@@ -16,9 +16,13 @@ services:
       AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
       AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
       AWS_SESSION_TOKEN: ${AWS_SESSION_TOKEN:-}
-      # Mismo broker que ya levanta ms-alertas (docker-compose.yml de ese
-      # repo) en la red compartida — no se crea un segundo contenedor.
-      RABBITMQ_HOST: ms-alertas-rabbitmq
+      # LocalStack (lo levanta ms-alertas en su docker-compose.yml, en la red
+      # compartida) en vez de AWS real para SNS — así no depende de la sesión
+      # del lab. S3 sigue usando las credenciales reales de arriba: ver la
+      # nota en SnsConfig.java sobre por qué no se mezclan.
+      AWS_REGION: us-east-1
+      AWS_ENDPOINT_OVERRIDE: http://ms-alertas-localstack:4566
+      AWS_SNS_TOPIC_ARN: arn:aws:sns:us-east-1:000000000000:sanos-eventos
     ports:
       - "8082:8082"
     networks:
