@@ -7,6 +7,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.duoc.ms_mascotas.DTO.MascotaContactoDTO;
+import com.duoc.ms_mascotas.model.Mascota;
 import com.duoc.ms_mascotas.service.MascotaService;
 
 import lombok.RequiredArgsConstructor;
@@ -32,11 +33,18 @@ public class InternalMascotaController {
     @GetMapping("/{id}/contacto")
     public ResponseEntity<MascotaContactoDTO> obtenerContacto(@PathVariable String id) {
         return mascotaService.obtenerParaContacto(id)
-                .map(mascota -> MascotaContactoDTO.builder()
-                        .mascotaId(mascota.getIdMascota())
-                        .emailDestino(mascota.getEmailContacto())
-                        .nombreMascota(mascota.getNombre())
-                        .build())
+                .map(mascota -> {
+                    // Se genera (o renueva) acá, no al leer: solo tiene sentido
+                    // emitir un token cuando de verdad alguien va a contactar,
+                    // no en cualquier lectura.
+                    Mascota conToken = mascotaService.generarTokenConfirmacion(mascota.getIdMascota());
+                    return MascotaContactoDTO.builder()
+                            .mascotaId(conToken.getIdMascota())
+                            .emailDestino(conToken.getEmailContacto())
+                            .nombreMascota(conToken.getNombre())
+                            .tokenReunificacion(conToken.getTokenReunificacion())
+                            .build();
+                })
                 .map(ResponseEntity::ok)
                 .orElseGet(() -> ResponseEntity.notFound().build());
     }

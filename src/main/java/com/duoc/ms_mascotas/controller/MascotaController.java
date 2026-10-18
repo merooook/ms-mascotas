@@ -17,10 +17,12 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.duoc.ms_mascotas.DTO.ActualizarMascotaDTO;
 import com.duoc.ms_mascotas.DTO.CambiarEstadoDTO;
+import com.duoc.ms_mascotas.DTO.ConfirmarReunificacionDTO;
 import com.duoc.ms_mascotas.DTO.CrearMascotaDTO;
 import com.duoc.ms_mascotas.DTO.MascotaResponseDTO;
 import com.duoc.ms_mascotas.model.Estado;
 import com.duoc.ms_mascotas.service.MascotaService;
+import com.duoc.ms_mascotas.service.MascotaService.ResultadoConfirmacion;
 import com.duoc.ms_mascotas.service.S3Service;
 
 import jakarta.validation.Valid;
@@ -94,6 +96,24 @@ public class MascotaController {
             @PathVariable String id,
             @Valid @RequestBody CambiarEstadoDTO dto) {
         return mascotaService.cambiarEstado(id, dto.getEstado(), usuarioId);
+    }
+
+    // Público, sin JWT: lo abre quien hizo clic en el link del correo de
+    // contacto. El token hace de autorización en vez de la sesión del dueño
+    // (ver MascotaService.confirmarReunificacion). POST a propósito, no GET
+    // — un cliente de correo o un escaner antispam que "abre" el link solo
+    // para revisarlo no debería disparar el cambio de estado por sí solo.
+    @PostMapping("/{id}/confirmar-reunificacion")
+    public ResponseEntity<Map<String, String>> confirmarReunificacion(
+            @PathVariable String id,
+            @Valid @RequestBody ConfirmarReunificacionDTO dto) {
+        ResultadoConfirmacion resultado = mascotaService.confirmarReunificacion(id, dto.getToken());
+        return switch (resultado) {
+            case CONFIRMADA -> ResponseEntity.ok(Map.of("resultado", "CONFIRMADA"));
+            case YA_REUNIFICADA -> ResponseEntity.ok(Map.of("resultado", "YA_REUNIFICADA"));
+            case TOKEN_EXPIRADO -> ResponseEntity.status(HttpStatus.GONE).body(Map.of("resultado", "TOKEN_EXPIRADO"));
+            case TOKEN_INVALIDO -> ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("resultado", "TOKEN_INVALIDO"));
+        };
     }
 
     @DeleteMapping("/{id}")
