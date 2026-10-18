@@ -77,34 +77,6 @@ Map<String, Object> mapa = objectMapper.readValue(json, new TypeReference<Map<St
 - `PATCH /mascotas/{idMascota}/estado`
 - `DELETE /mascotas/{idMascota}`
 
-### Moderación de reportes
-
-Los reportes nuevos se guardan con `estadoModeracion=PENDIENTE` y no aparecen en
-el listado, el detalle público ni el flujo de contacto. Las publicaciones
-históricas sin este campo se consideran aprobadas.
-
-Las siguientes operaciones exigen un JWT de Cognito con el grupo
-`Administradores`:
-
-- `GET /mascotas/admin?estado=PENDIENTE|APROBADA|RECHAZADA`
-- `PATCH /mascotas/admin/{idMascota}/aprobar`
-- `PATCH /mascotas/admin/{idMascota}/rechazar`
-- `DELETE /mascotas/admin/{idMascota}`
-
-Rechazar conserva el reporte oculto; eliminarlo lo borra definitivamente.
-
-El BFF no necesita cambios para esta autorización: ya enruta estas rutas y
-reconstruye `Authorization: Bearer` usando la cookie del **access token**. La
-configuración de seguridad de este servicio convierte el claim
-`cognito:groups=Administradores` a `ROLE_ADMINISTRADOR`, que es el rol que
-requiere `hasRole("ADMINISTRADOR")`.
-
-Las peticiones de escritura del panel envían `X-Requested-With: web`, requerido
-por la protección anti-CSRF del BFF. Si se acaba de agregar una cuenta al grupo
-`Administradores`, debe cerrar sesión e iniciar sesión de nuevo para obtener
-tokens que reflejen la pertenencia al grupo; los tokens ya emitidos no se
-actualizan por sí mismos.
-
 ### Header requerido
 
 Toda operación sensible valida el usuario mediante el header:

@@ -13,15 +13,7 @@ import org.springframework.security.oauth2.core.OAuth2TokenValidatorResult;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtValidators;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
-import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
-import org.springframework.security.oauth2.server.resource.authentication.JwtGrantedAuthoritiesConverter;
-import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.web.SecurityFilterChain;
-
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.List;
-import org.springframework.security.core.GrantedAuthority;
 
 @Configuration
 @EnableWebSecurity
@@ -45,7 +37,6 @@ public class SecurityConfig {
                 // Llamada de servicio a servicio desde ms-alertas, sin JWT (ver
                 // InternalMascotaController) — protegida por red, no por token.
                 .requestMatchers("/internal/**").permitAll()
-                .requestMatchers("/mascotas/admin", "/mascotas/admin/**").hasRole("ADMINISTRADOR")
                 // OJO con el orden: /mascotas/{id} de abajo también matchearía
                 // literalmente "/mascotas/mis-mascotas" (un solo segmento), así
                 // que esta regla más específica tiene que ir ANTES para que
@@ -61,25 +52,9 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.POST, "/mascotas/{id}/confirmar-reunificacion").permitAll()
                 .anyRequest().authenticated()
             )
-            .oauth2ResourceServer(oauth2 -> oauth2.jwt(jwt -> jwt
-                    .decoder(jwtDecoder())
-                    .jwtAuthenticationConverter(jwtAuthenticationConverter())));
+            .oauth2ResourceServer(oauth2 -> oauth2.jwt(jwt -> jwt.decoder(jwtDecoder())));
 
         return http.build();
-    }
-
-    JwtAuthenticationConverter jwtAuthenticationConverter() {
-        JwtGrantedAuthoritiesConverter scopes = new JwtGrantedAuthoritiesConverter();
-        JwtAuthenticationConverter converter = new JwtAuthenticationConverter();
-        converter.setJwtGrantedAuthoritiesConverter(jwt -> {
-            Collection<GrantedAuthority> authorities = new ArrayList<>(scopes.convert(jwt));
-            List<String> groups = jwt.getClaimAsStringList("cognito:groups");
-            if (groups != null && groups.contains("Administradores")) {
-                authorities.add(new SimpleGrantedAuthority("ROLE_ADMINISTRADOR"));
-            }
-            return authorities;
-        });
-        return converter;
     }
 
     private NimbusJwtDecoder jwtDecoder() {

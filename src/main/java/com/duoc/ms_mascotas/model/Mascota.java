@@ -42,8 +42,6 @@ public class Mascota {
 
     private Estado estado;
 
-    private EstadoModeracion estadoModeracion;
-
     // Origen del reporte (EXTRAVIADO o ENCONTRADO), fijado una sola vez al crear
     // y que NUNCA cambia — a diferencia de "estado", que sí se sobrescribe con
     // PATCH /estado. Sin esto, al reunificar una mascota se pierde para siempre
