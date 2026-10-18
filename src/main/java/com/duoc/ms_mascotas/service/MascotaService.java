@@ -21,6 +21,7 @@ import com.duoc.ms_mascotas.DTO.MascotaResponseDTO;
 import com.duoc.ms_mascotas.DTO.UbicacionDTO;
 import com.duoc.ms_mascotas.messaging.SnsEventPublisher;
 import com.duoc.ms_mascotas.model.Estado;
+import com.duoc.ms_mascotas.model.EstadoModeracion;
 import com.duoc.ms_mascotas.model.Mascota;
 import com.duoc.ms_mascotas.repository.MascotaRepository;
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -61,6 +62,7 @@ public class MascotaService {
                 .nombre(dto.getNombre())
                 .fotografia(dto.getFotografia())
                 .estado(dto.getEstado() != null ? dto.getEstado() : Estado.EXTRAVIADO)
+                .estadoModeracion(EstadoModeracion.PENDIENTE)
                 .tipoReporte(dto.getEstado() != null ? dto.getEstado() : Estado.EXTRAVIADO)
                 .ubicacion(toGeoJsonPoint(dto.getUbicacion()))
                 .comuna(dto.getComuna())
@@ -112,15 +114,7 @@ public class MascotaService {
 
     public Page<MascotaResponseDTO> listarTodas(Estado estado, Pageable pageable) {
         log.debug("Listando mascotas, estado={}", estado);
-
-        Page<Mascota> mascotas;
-        if (estado != null) {
-            mascotas = mascotaRepository.findByEstado(estado, pageable);
-        } else {
-            mascotas = mascotaRepository.findAll(pageable);
-        }
-
-        return mascotas.map(this::mapToResponseDTO);
+        return listarConFiltros(null, estado, null, null, pageable);
     }
 
     public Page<MascotaResponseDTO> listarConFiltros(String usuarioId, Estado estado, String tipoMascota,
@@ -128,23 +122,23 @@ public class MascotaService {
         log.debug("Listando mascotas filtradas: usuarioId={}, estado={}, tipoMascota={}, comuna={}",
             usuarioId, estado, tipoMascota, comuna);
 
-        if (estado == null && tipoMascota == null && comuna == null) {
-            return mascotaRepository.findAll(pageable).map(this::mapToResponseDTO);
-        }
-
-        Query query = new Query();
+        List<Criteria> criterios = new java.util.ArrayList<>();
+        criterios.add(new Criteria().orOperator(
+                Criteria.where("estadoModeracion").is(EstadoModeracion.APROBADA),
+                Criteria.where("estadoModeracion").exists(false)));
         if (estado != null) {
-            query.addCriteria(Criteria.where("estado").is(estado));
+            criterios.add(Criteria.where("estado").is(estado));
         }
         if (tipoMascota != null) {
-            query.addCriteria(Criteria.where("tipoMascota").is(tipoMascota));
+            criterios.add(Criteria.where("tipoMascota").is(tipoMascota));
         }
         if (comuna != null) {
             // regex + case-insensitive: evita que "Viña del Mar" y
             // "viña del mar" cuenten como comunas distintas.
-            query.addCriteria(Criteria.where("comuna").regex("^" + java.util.regex.Pattern.quote(comuna) + "$", "i"));
+            criterios.add(Criteria.where("comuna").regex("^" + java.util.regex.Pattern.quote(comuna) + "$", "i"));
         }
 
+        Query query = new Query(new Criteria().andOperator(criterios.toArray(Criteria[]::new)));
         long total = mongoTemplate.count(query, Mascota.class);
         List<Mascota> mascotas = mongoTemplate.find(query.with(pageable), Mascota.class);
         List<MascotaResponseDTO> dtos = mascotas.stream().map(this::mapToResponseDTO).toList();
@@ -153,7 +147,9 @@ public class MascotaService {
 
     public Optional<MascotaResponseDTO> obtenerPorId(String id) {
         log.debug("Buscando mascota por id={}", id);
-        return mascotaRepository.findById(id).map(this::mapToResponseDTO);
+        return mascotaRepository.findById(id)
+                .filter(this::estaAprobada)
+                .map(this::mapToResponseDTO);
     }
 
     // Para el endpoint interno que consume ms-alertas (GET
@@ -161,7 +157,35 @@ public class MascotaService {
     // que no pasa por mapToResponseDTO ni por el redondeo de ubicación.
     public Optional<Mascota> obtenerParaContacto(String id) {
         log.debug("Resolviendo contacto interno para mascotaId={}", id);
-        return mascotaRepository.findById(id);
+        return mascotaRepository.findById(id).filter(this::estaAprobada);
+    }
+
+    public Page<MascotaResponseDTO> listarParaModeracion(EstadoModeracion estadoModeracion, Pageable pageable) {
+        Criteria criterio = estadoModeracion == EstadoModeracion.APROBADA
+                ? new Criteria().orOperator(
+                        Criteria.where("estadoModeracion").is(EstadoModeracion.APROBADA),
+                        Criteria.where("estadoModeracion").exists(false))
+                : Criteria.where("estadoModeracion").is(estadoModeracion);
+        Query query = new Query(criterio);
+        long total = mongoTemplate.count(query, Mascota.class);
+        List<MascotaResponseDTO> contenido = mongoTemplate.find(query.with(pageable), Mascota.class)
+                .stream().map(this::mapToResponseDTO).toList();
+        return new PageImpl<>(contenido, pageable, total);
+    }
+
+    public MascotaResponseDTO aprobarMascota(String id) {
+        return cambiarEstadoModeracion(id, EstadoModeracion.APROBADA);
+    }
+
+    public MascotaResponseDTO rechazarMascota(String id) {
+        return cambiarEstadoModeracion(id, EstadoModeracion.RECHAZADA);
+    }
+
+    public void eliminarComoAdministrador(String id) {
+        Mascota mascota = mascotaRepository.findById(id)
+                .orElseThrow(() -> new IllegalArgumentException("Mascota no encontrada"));
+        mascotaRepository.delete(mascota);
+        log.info("Mascota eliminada por administración: idMascota={}", id);
     }
 
     // Se llama cada vez que alguien contacta sobre esta mascota (ver
@@ -304,6 +328,21 @@ public class MascotaService {
         log.debug("Transición válida: {} -> {}", estadoActual, nuevoEstado);
     }
 
+    private MascotaResponseDTO cambiarEstadoModeracion(String id, EstadoModeracion nuevoEstado) {
+        Mascota mascota = mascotaRepository.findById(id)
+                .orElseThrow(() -> new IllegalArgumentException("Mascota no encontrada"));
+        if (mascota.getEstadoModeracion() != EstadoModeracion.PENDIENTE) {
+            throw new IllegalArgumentException("Solo se pueden moderar reportes pendientes");
+        }
+        mascota.setEstadoModeracion(nuevoEstado);
+        return mapToResponseDTO(mascotaRepository.save(mascota));
+    }
+
+    private boolean estaAprobada(Mascota mascota) {
+        return mascota.getEstadoModeracion() == null
+                || mascota.getEstadoModeracion() == EstadoModeracion.APROBADA;
+    }
+
     private Map<String, Object> parseCaracteristicas(String descripcion, Map<String, Object> caracteristicas) {
         Map<String, Object> mapa = new HashMap<>();
 
@@ -334,6 +373,10 @@ public class MascotaService {
                 .tipoMascota(mascota.getTipoMascota())
                 .fotografia(mascota.getFotografia())
                 .estado(mascota.getEstado())
+                // Los documentos históricos se consideran aprobados: ya estaban publicados.
+                .estadoModeracion(mascota.getEstadoModeracion() != null
+                        ? mascota.getEstadoModeracion()
+                        : EstadoModeracion.APROBADA)
                 // documentos creados antes de este campo (tipoReporte == null): si
                 // todavía no fue reunificada, su tipo de reporte es su propio estado
                 // actual; si ya fue reunificada no hay forma de recuperar el origen,
