@@ -145,10 +145,14 @@ public class MascotaService {
         return new PageImpl<>(dtos, pageable, total);
     }
 
-    public Optional<MascotaResponseDTO> obtenerPorId(String id) {
+    // usuarioId es opcional (invitados pueden ver el detalle de una mascota
+    // aprobada sin estar logueados) — pero si viene y coincide con el dueño
+    // del reporte, deja ver el detalle aunque esté pendiente o rechazado:
+    // la persona que lo creó debe poder revisar su propia publicación.
+    public Optional<MascotaResponseDTO> obtenerPorId(String id, String usuarioId) {
         log.debug("Buscando mascota por id={}", id);
         return mascotaRepository.findById(id)
-                .filter(this::estaAprobada)
+                .filter(m -> estaAprobada(m) || (usuarioId != null && usuarioId.equals(m.getUsuarioId())))
                 .map(this::mapToResponseDTO);
     }
 

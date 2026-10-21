@@ -90,7 +90,7 @@ public class MascotaControllerTest {
 
 	@Test
 	void obtenerMascotaSinHeaderPermiteAccesoDeInvitado() throws Exception {
-		when(mascotaService.obtenerPorId("mascota-1"))
+		when(mascotaService.obtenerPorId("mascota-1", null))
 				.thenReturn(Optional.of(MascotaResponseDTO.builder().idMascota("mascota-1").build()));
 
 		mockMvc.perform(get("/mascotas/mascota-1"))
@@ -99,7 +99,7 @@ public class MascotaControllerTest {
 
 	@Test
 	void obtenerMascotaInexistenteRespondeNotFound() throws Exception {
-		when(mascotaService.obtenerPorId("desconocida")).thenReturn(Optional.empty());
+		when(mascotaService.obtenerPorId("desconocida", null)).thenReturn(Optional.empty());
 
 		mockMvc.perform(get("/mascotas/desconocida"))
 				.andExpect(status().isNotFound());
