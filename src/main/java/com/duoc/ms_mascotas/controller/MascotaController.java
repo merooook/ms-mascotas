@@ -65,12 +65,15 @@ public class MascotaController {
         return mascotaService.listarConFiltros(usuarioId, estado, tipoMascota, comuna, pageable);
     }
 
-    // Sin X-User-Id obligatorio: el detalle es de acceso libre para invitados
-    // (misma decisión de UX que el listado). El id no se usaba de todas
-    // formas — el servicio no filtra por usuarioId acá.
+    // X-User-Id opcional: el detalle es de acceso libre para invitados (misma
+    // decisión de UX que el listado), pero si viene y es el dueño del
+    // reporte, el servicio también lo deja ver su propia publicación aunque
+    // todavía esté pendiente o la hayan rechazado.
     @GetMapping("/{id}")
-    public ResponseEntity<MascotaResponseDTO> obtenerMascota(@PathVariable String id) {
-        return mascotaService.obtenerPorId(id)
+    public ResponseEntity<MascotaResponseDTO> obtenerMascota(
+            @RequestHeader(value = "X-User-Id", required = false) String usuarioId,
+            @PathVariable String id) {
+        return mascotaService.obtenerPorId(id, usuarioId)
                 .map(ResponseEntity::ok)
                 .orElseGet(() -> ResponseEntity.notFound().build());
     }

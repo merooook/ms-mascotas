@@ -167,8 +167,18 @@ public class MascotaServiceTest {
 		mascota.setEstadoModeracion(EstadoModeracion.PENDIENTE);
 		when(mascotaRepository.findById("mascota-1")).thenReturn(Optional.of(mascota));
 
-		assertThat(mascotaService.obtenerPorId("mascota-1")).isEmpty();
+		assertThat(mascotaService.obtenerPorId("mascota-1", null)).isEmpty();
 		assertThat(mascotaService.obtenerParaContacto("mascota-1")).isEmpty();
+	}
+
+	@Test
+	void reportePendienteSiLoPuedeConsultarSuPropioDueno() {
+		mascota.setEstadoModeracion(EstadoModeracion.PENDIENTE);
+		mascota.setUsuarioId("usuario-1");
+		when(mascotaRepository.findById("mascota-1")).thenReturn(Optional.of(mascota));
+
+		assertThat(mascotaService.obtenerPorId("mascota-1", "usuario-1")).isPresent();
+		assertThat(mascotaService.obtenerPorId("mascota-1", "otro-usuario")).isEmpty();
 	}
 
 	@Test
@@ -180,7 +190,7 @@ public class MascotaServiceTest {
 		var respuesta = mascotaService.aprobarMascota("mascota-1");
 
 		assertThat(respuesta.getEstadoModeracion()).isEqualTo(EstadoModeracion.APROBADA);
-		assertThat(mascotaService.obtenerPorId("mascota-1")).isPresent();
+		assertThat(mascotaService.obtenerPorId("mascota-1", null)).isPresent();
 	}
 
 	@Test
@@ -192,7 +202,7 @@ public class MascotaServiceTest {
 		var respuesta = mascotaService.rechazarMascota("mascota-1");
 
 		assertThat(respuesta.getEstadoModeracion()).isEqualTo(EstadoModeracion.RECHAZADA);
-		assertThat(mascotaService.obtenerPorId("mascota-1")).isEmpty();
+		assertThat(mascotaService.obtenerPorId("mascota-1", null)).isEmpty();
 	}
 
 	@Test
@@ -302,7 +312,7 @@ public class MascotaServiceTest {
 		mascota.setTipoReporte(null); // documento creado antes de este campo
 		when(mascotaRepository.findById("mascota-1")).thenReturn(Optional.of(mascota));
 
-		var respuesta = mascotaService.obtenerPorId("mascota-1").orElseThrow();
+		var respuesta = mascotaService.obtenerPorId("mascota-1", null).orElseThrow();
 
 		assertThat(respuesta.getTipoReporte()).isNull();
 	}
