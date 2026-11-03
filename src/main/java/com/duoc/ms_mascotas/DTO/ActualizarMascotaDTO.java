@@ -2,19 +2,24 @@ package com.duoc.ms_mascotas.DTO;
 
 import java.util.Map;
 
-import com.duoc.ms_mascotas.model.Estado;
-
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.Size;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+/*
+ * Edición de un reporte. A propósito NO trae "estado": el estado cambia solo por PATCH /{id}/estado,
+ * que valida la transición, publica el evento de reunificación y limpia el token. Antes un
+ * {"estado":"REUNIFICADO"} acá saltaba todo eso (la alerta quedaba activa y no salía el correo de cierre)
+ * y un {"estado":"EXTRAVIADO"} reabría un reporte ya reunificado.
+ */
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
 public class ActualizarMascotaDTO {
 
-    private Estado estado;
+    @Valid
     private UbicacionDTO ubicacion;
 
     @Size(max = 100, message = "La comuna no puede superar los 100 caracteres")

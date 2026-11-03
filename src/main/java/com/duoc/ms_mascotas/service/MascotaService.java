@@ -1,39 +1,45 @@
 package com.duoc.ms_mascotas.service;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.mongodb.core.MongoTemplate;
+import org.springframework.data.mongodb.core.geo.GeoJsonPoint;
+import org.springframework.data.mongodb.core.query.Criteria;
+import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.stereotype.Service;
 
 import com.duoc.ms_mascotas.DTO.ActualizarMascotaDTO;
 import com.duoc.ms_mascotas.DTO.CrearMascotaDTO;
+import com.duoc.ms_mascotas.DTO.MascotaEliminadaEvento;
 import com.duoc.ms_mascotas.DTO.MascotaReportadaEvento;
 import com.duoc.ms_mascotas.DTO.MascotaReunificadaEvento;
 import com.duoc.ms_mascotas.DTO.MascotaResponseDTO;
 import com.duoc.ms_mascotas.DTO.UbicacionDTO;
+import com.duoc.ms_mascotas.exception.AccesoDenegadoException;
+import com.duoc.ms_mascotas.exception.RecursoNoEncontradoException;
 import com.duoc.ms_mascotas.messaging.SnsEventPublisher;
 import com.duoc.ms_mascotas.model.Estado;
 import com.duoc.ms_mascotas.model.EstadoModeracion;
 import com.duoc.ms_mascotas.model.Mascota;
 import com.duoc.ms_mascotas.repository.MascotaRepository;
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.data.mongodb.core.MongoTemplate;
-import org.springframework.data.mongodb.core.geo.GeoJsonPoint;
-import org.springframework.data.mongodb.core.query.Criteria;
-import org.springframework.data.mongodb.core.query.Query;
 
 @Slf4j
 @Service
@@ -43,17 +49,35 @@ public class MascotaService {
     private final MascotaRepository mascotaRepository;
     private final MongoTemplate mongoTemplate;
     private final SnsEventPublisher snsEventPublisher;
-    private final ObjectMapper objectMapper = new ObjectMapper();
+    private final FotografiaService fotografiaService;
 
     public static final String TIPO_EVENTO_MASCOTA_REPORTADA = "mascota.reportada";
     public static final String TIPO_EVENTO_MASCOTA_REUNIFICADA = "mascota.reunificada";
+    public static final String TIPO_EVENTO_MASCOTA_ELIMINADA = "mascota.eliminada";
 
     private static final Duration DURACION_TOKEN_CONFIRMACION = Duration.ofDays(7);
+
+    /* el listado público acepta ordenar solo por campos públicos: antes valía cualquiera, así que
+     * ?sort=emailContacto,asc (sin login) ordenaba por el correo privado de los dueños y revelaba datos
+     * que las respuestas públicas ocultan; ordenar por un campo sin índice tampoco es gratis para Mongo */
+    private static final Set<String> CAMPOS_ORDENABLES = Set.of("fecha", "nombre", "comuna", "estado", "tipoMascota");
+    private static final int TAMANO_MAXIMO_PAGINA = 200;
+
+    private static final int MAX_CARACTERISTICAS = 20;
+    private static final int LARGO_MAXIMO_CLAVE_CARACTERISTICA = 50;
+    private static final int LARGO_MAXIMO_VALOR_CARACTERISTICA = 200;
 
     public enum ResultadoConfirmacion { CONFIRMADA, YA_REUNIFICADA, TOKEN_INVALIDO, TOKEN_EXPIRADO }
 
     public MascotaResponseDTO crearMascota(CrearMascotaDTO dto, String usuarioId) {
         log.info("Creando mascota: nombre='{}', tipo={}, usuarioId={}", dto.getNombre(), dto.getTipoMascota(), usuarioId);
+
+        Estado estadoInicial = dto.getEstado() != null ? dto.getEstado() : Estado.EXTRAVIADO;
+        if (estadoInicial == Estado.REUNIFICADO) {
+            throw new IllegalArgumentException("El estado inicial debe ser EXTRAVIADO o ENCONTRADO");
+        }
+        validarFotografia(dto.getFotografia());
+        validarCaracteristicas(dto.getCaracteristicas());
 
         Mascota mascota = Mascota.builder()
                 .usuarioId(usuarioId)
@@ -61,14 +85,14 @@ public class MascotaService {
                 .tipoMascota(dto.getTipoMascota())
                 .nombre(dto.getNombre())
                 .fotografia(dto.getFotografia())
-                .estado(dto.getEstado() != null ? dto.getEstado() : Estado.EXTRAVIADO)
+                .estado(estadoInicial)
                 .estadoModeracion(EstadoModeracion.PENDIENTE)
-                .tipoReporte(dto.getEstado() != null ? dto.getEstado() : Estado.EXTRAVIADO)
+                .tipoReporte(estadoInicial)
                 .ubicacion(toGeoJsonPoint(dto.getUbicacion()))
                 .comuna(dto.getComuna())
                 .fecha(LocalDateTime.now())
                 .descripcion(dto.getDescripcion())
-                .caracteristicas(parseCaracteristicas(dto.getDescripcion(), dto.getCaracteristicas()))
+                .caracteristicas(construirCaracteristicas(dto.getDescripcion(), dto.getCaracteristicas()))
                 .build();
 
         Mascota guardada = mascotaRepository.save(mascota);
@@ -90,8 +114,7 @@ public class MascotaService {
                 mascota.getUbicacion().getY(),
                 mascota.getUbicacion().getX());
 
-        snsEventPublisher.publicar(TIPO_EVENTO_MASCOTA_REPORTADA, evento);
-        log.info("Evento mascota.reportada publicado: idMascota={}", mascota.getIdMascota());
+        publicarSinFallar(TIPO_EVENTO_MASCOTA_REPORTADA, evento, mascota.getIdMascota());
     }
 
     // Avisa a quien creó ESTE reporte (dueño si era EXTRAVIADO, quien la
@@ -108,8 +131,23 @@ public class MascotaService {
                 mascota.getNombre(),
                 mascota.getEmailContacto());
 
-        snsEventPublisher.publicar(TIPO_EVENTO_MASCOTA_REUNIFICADA, evento);
-        log.info("Evento mascota.reunificada publicado: idMascota={}", mascota.getIdMascota());
+        publicarSinFallar(TIPO_EVENTO_MASCOTA_REUNIFICADA, evento, mascota.getIdMascota());
+    }
+
+    /*
+     * La escritura en Mongo ya se hizo cuando se llega acá. Si SNS (o LocalStack) falla, antes la petición
+     * terminaba en 500: la persona reintentaba y duplicaba el reporte, y la alerta de zona nunca se creaba.
+     * Ahora se registra el error y la petición responde bien.
+     * LÍMITE CONOCIDO: el evento perdido no se reintenta (haría falta un "outbox" que lo reenvíe).
+     */
+    private void publicarSinFallar(String tipoEvento, Object evento, String mascotaId) {
+        try {
+            snsEventPublisher.publicar(tipoEvento, evento);
+            log.info("Evento {} publicado: idMascota={}", tipoEvento, mascotaId);
+        } catch (RuntimeException e) {
+            log.error("No se pudo publicar el evento {} de la mascota {}; el cambio ya quedó guardado",
+                    tipoEvento, mascotaId, e);
+        }
     }
 
     public Page<MascotaResponseDTO> listarTodas(Estado estado, Pageable pageable) {
@@ -121,6 +159,8 @@ public class MascotaService {
             String comuna, Pageable pageable) {
         log.debug("Listando mascotas filtradas: usuarioId={}, estado={}, tipoMascota={}, comuna={}",
             usuarioId, estado, tipoMascota, comuna);
+
+        Pageable paginacion = paginacionSegura(pageable);
 
         List<Criteria> criterios = new java.util.ArrayList<>();
         criterios.add(new Criteria().orOperator(
@@ -140,9 +180,23 @@ public class MascotaService {
 
         Query query = new Query(new Criteria().andOperator(criterios.toArray(Criteria[]::new)));
         long total = mongoTemplate.count(query, Mascota.class);
-        List<Mascota> mascotas = mongoTemplate.find(query.with(pageable), Mascota.class);
+        List<Mascota> mascotas = mongoTemplate.find(query.with(paginacion), Mascota.class);
         List<MascotaResponseDTO> dtos = mascotas.stream().map(this::mapToResponseDTO).toList();
-        return new PageImpl<>(dtos, pageable, total);
+        return new PageImpl<>(dtos, paginacion, total);
+    }
+
+    /* orden solo por campos permitidos y tamaño de página acotado; sin paginar, primera página */
+    Pageable paginacionSegura(Pageable pedida) {
+        if (pedida == null || pedida.isUnpaged()) {
+            return PageRequest.of(0, TAMANO_MAXIMO_PAGINA);
+        }
+        for (Sort.Order orden : pedida.getSort()) {
+            if (!CAMPOS_ORDENABLES.contains(orden.getProperty())) {
+                throw new IllegalArgumentException("No se puede ordenar por '" + orden.getProperty()
+                        + "'. Campos permitidos: " + String.join(", ", CAMPOS_ORDENABLES.stream().sorted().toList()));
+            }
+        }
+        return PageRequest.of(pedida.getPageNumber(), Math.min(pedida.getPageSize(), TAMANO_MAXIMO_PAGINA), pedida.getSort());
     }
 
     // usuarioId es opcional (invitados pueden ver el detalle de una mascota
@@ -156,7 +210,7 @@ public class MascotaService {
                 .map(this::mapToResponseDTO);
     }
 
-    // Para el endpoint interno que consume ms-alertas (GET
+    // Para el endpoint interno que consume ms-alertas (POST
     // /internal/mascotas/{id}/contacto) — nunca se expone al frontend, así
     // que no pasa por mapToResponseDTO ni por el redondeo de ubicación.
     public Optional<Mascota> obtenerParaContacto(String id) {
@@ -186,30 +240,34 @@ public class MascotaService {
     }
 
     public void eliminarComoAdministrador(String id) {
-        Mascota mascota = mascotaRepository.findById(id)
-                .orElseThrow(() -> new IllegalArgumentException("Mascota no encontrada"));
+        Mascota mascota = buscar(id);
         mascotaRepository.delete(mascota);
         log.info("Mascota eliminada por administración: idMascota={}", id);
+        limpiarDatosAsociados(mascota);
     }
 
-    // Se llama cada vez que alguien contacta sobre esta mascota (ver
-    // InternalMascotaController) — genera un token nuevo y de paso invalida
-    // cualquier token anterior sin usar, así solo el último correo de
-    // contacto puede confirmar la reunificación.
+    // Se llama cuando alguien contacta sobre esta mascota (ver InternalMascotaController).
     //
-    // Solo para reportes EXTRAVIADO: ahí quien recibe el correo de contacto
-    // es siempre el dueño real (el que perdió la mascota). En un reporte
-    // ENCONTRADO, quien lo recibe es quien encontró la mascota, no el dueño
-    // — no tiene autoridad para confirmar la reunificación de otra persona.
+    // Si ya hay un token vigente se reutiliza: antes cada llamada generaba uno nuevo e invalidaba el
+    // anterior, así que quien pudiera llamar al endpoint dejaba sin efecto el enlace que el dueño real
+    // ya había recibido por correo. Solo se emite uno nuevo cuando no hay o ya venció.
+    //
+    // Solo para reportes EXTRAVIADO: ahí quien recibe el correo de contacto es siempre el dueño real
+    // (el que perdió la mascota). En un reporte ENCONTRADO, quien lo recibe es quien encontró la mascota,
+    // no el dueño — no tiene autoridad para confirmar la reunificación de otra persona.
     public Mascota generarTokenConfirmacion(String id) {
-        Mascota mascota = mascotaRepository.findById(id)
-                .orElseThrow(() -> new IllegalArgumentException("Mascota no encontrada"));
+        Mascota mascota = buscar(id);
 
         if (mascota.getEstado() == Estado.REUNIFICADO) {
             return mascota; // ya está cerrada, no tiene sentido emitir un token
         }
         if (mascota.getTipoReporte() != Estado.EXTRAVIADO) {
             return mascota; // ENCONTRADO (o sin tipoReporte): sin token, el correo sale sin botón
+        }
+        if (mascota.getTokenReunificacion() != null
+                && mascota.getTokenReunificacionExpira() != null
+                && mascota.getTokenReunificacionExpira().isAfter(LocalDateTime.now())) {
+            return mascota; // el token vigente sigue sirviendo
         }
 
         mascota.setTokenReunificacion(UUID.randomUUID().toString());
@@ -229,7 +287,7 @@ public class MascotaService {
         if (mascota.getEstado() == Estado.REUNIFICADO) {
             return ResultadoConfirmacion.YA_REUNIFICADA;
         }
-        if (token == null || token.isBlank() || !token.equals(mascota.getTokenReunificacion())) {
+        if (!tokensIguales(token, mascota.getTokenReunificacion())) {
             return ResultadoConfirmacion.TOKEN_INVALIDO;
         }
         if (mascota.getTokenReunificacionExpira() == null
@@ -247,38 +305,63 @@ public class MascotaService {
         return ResultadoConfirmacion.CONFIRMADA;
     }
 
+    /* comparación en tiempo constante: no filtra cuántos caracteres del token coinciden */
+    private boolean tokensIguales(String recibido, String guardado) {
+        if (recibido == null || recibido.isBlank() || guardado == null) {
+            return false;
+        }
+        return MessageDigest.isEqual(recibido.getBytes(StandardCharsets.UTF_8), guardado.getBytes(StandardCharsets.UTF_8));
+    }
+
     public Page<MascotaResponseDTO> misMascotas(String usuarioId, Pageable pageable) {
         log.debug("Listando mascotas del usuario={}", usuarioId);
-        return mascotaRepository.findByUsuarioId(usuarioId, pageable).map(this::mapToResponseDTO);
+        return mascotaRepository.findByUsuarioId(usuarioId, paginacionSegura(pageable)).map(this::mapToResponseDTO);
     }
 
     public MascotaResponseDTO actualizarMascota(String id, ActualizarMascotaDTO dto, String usuarioId) {
         log.info("Actualizando mascota idMascota={} del usuario={}", id, usuarioId);
 
-        Mascota mascota = mascotaRepository.findById(id)
-                .orElseThrow(() -> new IllegalArgumentException("Mascota no encontrada"));
+        Mascota mascota = buscar(id);
+        exigirDueno(mascota, usuarioId, "No tienes permiso para actualizar esta mascota");
 
-        if (!mascota.getUsuarioId().equals(usuarioId)) {
-            throw new IllegalArgumentException("No tienes permiso para actualizar esta mascota");
-        }
+        /* si cambia lo que el público ve (foto, descripción o zona) el reporte vuelve a moderación: antes
+         * un reporte aprobado podía cambiar su foto o su texto sin que nadie lo revisara */
+        boolean cambiaContenidoPublico = false;
 
-        if (dto.getEstado() != null) {
-            mascota.setEstado(dto.getEstado());
-        }
         if (dto.getUbicacion() != null) {
-            mascota.setUbicacion(toGeoJsonPoint(dto.getUbicacion()));
+            GeoJsonPoint nueva = toGeoJsonPoint(dto.getUbicacion());
+            /* el frontend solo conoce la ubicación redondeada: si la zona (2 decimales) es la misma, no se
+             * considera un cambio ni se pisa la coordenada exacta guardada con una aproximada */
+            if (!mismaZona(mascota.getUbicacion(), nueva)) {
+                mascota.setUbicacion(nueva);
+                cambiaContenidoPublico = true;
+            }
         }
         if (dto.getComuna() != null) {
             mascota.setComuna(dto.getComuna());
         }
-        if (dto.getDescripcion() != null) {
+        if (dto.getDescripcion() != null && !Objects.equals(dto.getDescripcion(), mascota.getDescripcion())) {
             mascota.setDescripcion(dto.getDescripcion());
+            cambiaContenidoPublico = true;
         }
-        if (dto.getFotografia() != null) {
+        if (dto.getFotografia() != null && !Objects.equals(dto.getFotografia(), mascota.getFotografia())) {
+            validarFotografia(dto.getFotografia());
             mascota.setFotografia(dto.getFotografia());
+            cambiaContenidoPublico = true;
         }
         if (dto.getCaracteristicas() != null && !dto.getCaracteristicas().isEmpty()) {
-            mascota.getCaracteristicas().putAll(dto.getCaracteristicas());
+            validarCaracteristicas(dto.getCaracteristicas());
+            Map<String, Object> combinadas = new HashMap<>(mascota.getCaracteristicas());
+            combinadas.putAll(dto.getCaracteristicas());
+            if (combinadas.size() > MAX_CARACTERISTICAS) {
+                throw new IllegalArgumentException("Un reporte no puede tener más de " + MAX_CARACTERISTICAS + " características");
+            }
+            mascota.setCaracteristicas(combinadas);
+        }
+
+        if (cambiaContenidoPublico && estaAprobada(mascota)) {
+            mascota.setEstadoModeracion(EstadoModeracion.PENDIENTE);
+            log.info("El reporte vuelve a moderación por cambios en su contenido público: id={}", id);
         }
 
         Mascota actualizada = mascotaRepository.save(mascota);
@@ -289,12 +372,8 @@ public class MascotaService {
     public MascotaResponseDTO cambiarEstado(String id, Estado nuevoEstado, String usuarioId) {
         log.info("Cambiando estado de mascota idMascota={} a {}", id, nuevoEstado);
 
-        Mascota mascota = mascotaRepository.findById(id)
-                .orElseThrow(() -> new IllegalArgumentException("Mascota no encontrada"));
-
-        if (!mascota.getUsuarioId().equals(usuarioId)) {
-            throw new IllegalArgumentException("No tienes permiso para cambiar el estado");
-        }
+        Mascota mascota = buscar(id);
+        exigirDueno(mascota, usuarioId, "No tienes permiso para cambiar el estado");
 
         validarTransicion(mascota.getEstado(), nuevoEstado);
         mascota.setEstado(nuevoEstado);
@@ -314,15 +393,24 @@ public class MascotaService {
     public void eliminarMascota(String id, String usuarioId) {
         log.info("Eliminando mascota idMascota={} del usuario={}", id, usuarioId);
 
-        Mascota mascota = mascotaRepository.findById(id)
-                .orElseThrow(() -> new IllegalArgumentException("Mascota no encontrada"));
-
-        if (!mascota.getUsuarioId().equals(usuarioId)) {
-            throw new IllegalArgumentException("No tienes permiso para eliminar esta mascota");
-        }
+        Mascota mascota = buscar(id);
+        exigirDueno(mascota, usuarioId, "No tienes permiso para eliminar esta mascota");
 
         mascotaRepository.deleteById(id);
         log.info("Mascota eliminada: idMascota={}", id);
+        limpiarDatosAsociados(mascota);
+    }
+
+    /*
+     * Al borrar un reporte no deben quedar datos huérfanos (regla del proyecto: permitir eliminar los datos
+     * asociados): la foto se borra del bucket y se publica "mascota.eliminada" para que ms-alertas y ms-chat
+     * limpien lo suyo. Ambas cosas son "lo mejor posible": el reporte ya se borró y no deben romper la petición.
+     * PENDIENTE en otros repos: que ms-alertas y ms-chat consuman el evento (hoy se publica y nadie lo escucha).
+     */
+    private void limpiarDatosAsociados(Mascota mascota) {
+        fotografiaService.eliminar(mascota.getFotografia());
+        publicarSinFallar(TIPO_EVENTO_MASCOTA_ELIMINADA, new MascotaEliminadaEvento(mascota.getIdMascota()),
+                mascota.getIdMascota());
     }
 
     private void validarTransicion(Estado estadoActual, Estado nuevoEstado) {
@@ -333,8 +421,7 @@ public class MascotaService {
     }
 
     private MascotaResponseDTO cambiarEstadoModeracion(String id, EstadoModeracion nuevoEstado) {
-        Mascota mascota = mascotaRepository.findById(id)
-                .orElseThrow(() -> new IllegalArgumentException("Mascota no encontrada"));
+        Mascota mascota = buscar(id);
         if (mascota.getEstadoModeracion() != EstadoModeracion.PENDIENTE) {
             throw new IllegalArgumentException("Solo se pueden moderar reportes pendientes");
         }
@@ -342,31 +429,75 @@ public class MascotaService {
         return mapToResponseDTO(mascotaRepository.save(mascota));
     }
 
+    private Mascota buscar(String id) {
+        return mascotaRepository.findById(id)
+                .orElseThrow(() -> new RecursoNoEncontradoException("Mascota no encontrada"));
+    }
+
+    /* Objects.equals: un documento histórico sin usuarioId daba NullPointerException con getUsuarioId().equals(...) */
+    private void exigirDueno(Mascota mascota, String usuarioId, String mensaje) {
+        if (usuarioId == null || !Objects.equals(mascota.getUsuarioId(), usuarioId)) {
+            throw new AccesoDenegadoException(mensaje);
+        }
+    }
+
     private boolean estaAprobada(Mascota mascota) {
         return mascota.getEstadoModeracion() == null
                 || mascota.getEstadoModeracion() == EstadoModeracion.APROBADA;
     }
 
-    private Map<String, Object> parseCaracteristicas(String descripcion, Map<String, Object> caracteristicas) {
+    private void validarFotografia(String fotografia) {
+        if (fotografia != null && !fotografiaService.esPermitida(fotografia)) {
+            throw new IllegalArgumentException(
+                    "La fotografía debe ser una imagen subida con la URL firmada de la plataforma");
+        }
+    }
+
+    /*
+     * Las características son un mapa libre que el usuario escribe. Claves con "." o que empiezan con "$"
+     * hacen fallar la escritura en Mongo (500 después de aceptar la petición) y valores anidados o enormes
+     * inflan el documento. Se aceptan claves de hasta 50 caracteres y valores de texto (hasta 200), número o
+     * booleano. El tope de 20 claves se aplica al mapa final al editar.
+     */
+    private void validarCaracteristicas(Map<String, Object> caracteristicas) {
+        if (caracteristicas == null) {
+            return;
+        }
+        if (caracteristicas.size() > MAX_CARACTERISTICAS) {
+            throw new IllegalArgumentException("No se pueden enviar más de " + MAX_CARACTERISTICAS + " características");
+        }
+        for (Map.Entry<String, Object> entrada : caracteristicas.entrySet()) {
+            String clave = entrada.getKey();
+            if (clave == null || clave.isBlank() || clave.length() > LARGO_MAXIMO_CLAVE_CARACTERISTICA
+                    || clave.contains(".") || clave.startsWith("$")) {
+                throw new IllegalArgumentException("Nombre de característica inválido");
+            }
+            Object valor = entrada.getValue();
+            if (valor == null) {
+                continue;
+            }
+            if (!(valor instanceof String || valor instanceof Number || valor instanceof Boolean)) {
+                throw new IllegalArgumentException(
+                        "El valor de la característica '" + clave + "' debe ser texto, número o booleano");
+            }
+            if (valor instanceof String texto && texto.length() > LARGO_MAXIMO_VALOR_CARACTERISTICA) {
+                throw new IllegalArgumentException(
+                        "El valor de la característica '" + clave + "' supera los " + LARGO_MAXIMO_VALOR_CARACTERISTICA + " caracteres");
+            }
+        }
+    }
+
+    /* La descripción se guarda siempre como texto. Antes, si empezaba con "{" se interpretaba como JSON y se
+     * mezclaba dentro del mapa: el usuario decidía la forma del documento sin pasar por ninguna validación. */
+    private Map<String, Object> construirCaracteristicas(String descripcion, Map<String, Object> caracteristicas) {
         Map<String, Object> mapa = new HashMap<>();
 
         if (caracteristicas != null && !caracteristicas.isEmpty()) {
             mapa.putAll(caracteristicas);
         }
-
         if (descripcion != null && !descripcion.isBlank()) {
-            try {
-                if (descripcion.trim().startsWith("{")) {
-                    Map<String, Object> parsed = objectMapper.readValue(descripcion, new TypeReference<>() {});
-                    mapa.putAll(parsed);
-                } else {
-                    mapa.put("descripcion", descripcion);
-                }
-            } catch (JsonProcessingException e) {
-                mapa.put("descripcion", descripcion);
-            }
+            mapa.put("descripcion", descripcion);
         }
-
         return mapa;
     }
 
@@ -392,7 +523,7 @@ public class MascotaService {
                 .comuna(mascota.getComuna())
                 .descripcion(mascota.getDescripcion())
                 .caracteristicas(mascota.getCaracteristicas())
-                .fecha(mascota.getFecha()) // ###################################
+                .fecha(mascota.getFecha())
                 .build();
     }
 
@@ -401,6 +532,14 @@ public class MascotaService {
             return null;
         }
         return new GeoJsonPoint(ubicacion.getLongitud(), ubicacion.getLatitud());
+    }
+
+    /* misma zona = mismas coordenadas redondeadas a 2 decimales (~1,1 km), que es lo que el público ve */
+    private boolean mismaZona(GeoJsonPoint actual, GeoJsonPoint nueva) {
+        if (actual == null || nueva == null) {
+            return actual == nueva;
+        }
+        return redondear(actual.getX()) == redondear(nueva.getX()) && redondear(actual.getY()) == redondear(nueva.getY());
     }
 
     private UbicacionDTO toUbicacionDTO(GeoJsonPoint ubicacion) {
