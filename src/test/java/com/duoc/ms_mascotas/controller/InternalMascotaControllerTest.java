@@ -49,7 +49,8 @@ class InternalMascotaControllerTest {
 				.andExpect(jsonPath("$.mascotaId").value("m1"))
 				.andExpect(jsonPath("$.nombreMascota").value("Firu"))
 				.andExpect(jsonPath("$.duenoSub").value("sub-dueno"))
-				// el correo del dueño no tiene por qué viajar a ms-chat
+				// el correo viaja solo para avisarle al dueño que tiene un mensaje nuevo (nunca al frontend)
+				.andExpect(jsonPath("$.duenoEmail").value("dueno@example.com"))
 				.andExpect(jsonPath("$.emailContacto").doesNotExist())
 				.andExpect(jsonPath("$.emailDestino").doesNotExist());
 	}

@@ -63,6 +63,7 @@ public class InternalMascotaController {
                         .mascotaId(mascota.getIdMascota())
                         .nombreMascota(mascota.getNombre())
                         .duenoSub(mascota.getUsuarioId())
+                        .duenoEmail(mascota.getEmailContacto())
                         .build())
                 .map(ResponseEntity::ok)
                 .orElseGet(() -> ResponseEntity.notFound().build());
