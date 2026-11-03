@@ -6,6 +6,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.duoc.ms_mascotas.DTO.MascotaChatDTO;
 import com.duoc.ms_mascotas.DTO.MascotaContactoDTO;
 import com.duoc.ms_mascotas.model.Mascota;
 import com.duoc.ms_mascotas.service.MascotaService;
@@ -45,6 +46,24 @@ public class InternalMascotaController {
                             .tokenReunificacion(conToken.getTokenReunificacion())
                             .build();
                 })
+                .map(ResponseEntity::ok)
+                .orElseGet(() -> ResponseEntity.notFound().build());
+    }
+
+    /**
+     * Para ms-chat: quién es el dueño de un reporte. Reutiliza obtenerParaContacto, así
+     * que igual que el contacto solo responde por reportes aprobados (uno pendiente o
+     * rechazado devuelve 404). Un reporte sin usuarioId (histórico) tampoco admite chat.
+     */
+    @GetMapping("/{id}/chat")
+    public ResponseEntity<MascotaChatDTO> obtenerParaChat(@PathVariable String id) {
+        return mascotaService.obtenerParaContacto(id)
+                .filter(mascota -> mascota.getUsuarioId() != null && !mascota.getUsuarioId().isBlank())
+                .map(mascota -> MascotaChatDTO.builder()
+                        .mascotaId(mascota.getIdMascota())
+                        .nombreMascota(mascota.getNombre())
+                        .duenoSub(mascota.getUsuarioId())
+                        .build())
                 .map(ResponseEntity::ok)
                 .orElseGet(() -> ResponseEntity.notFound().build());
     }
