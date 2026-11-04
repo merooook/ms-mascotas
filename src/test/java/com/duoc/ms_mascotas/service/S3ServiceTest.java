@@ -1,5 +1,6 @@
 package com.duoc.ms_mascotas.service;
 
+import com.duoc.ms_mascotas.exception.SolicitudInvalidaException;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -38,7 +39,7 @@ class S3ServiceTest {
 
     @Test
     void generaUrlFirmadaPutSinConectarseABucket() {
-        var resultado = s3Service.generarUrlFirmada("foto.jpg", "image/jpeg", 12345);
+        var resultado = s3Service.generarUrlFirmada("sub-a", "foto.jpg", "image/jpeg", 12345);
         URI url = URI.create(resultado.get("url"));
 
         assertThat(resultado).containsKeys("url", "key");
@@ -52,9 +53,9 @@ class S3ServiceTest {
 
     @Test
     void aceptaFormatosPermitidosYArchivoEnElLimiteDeCincoMb() {
-        var jpeg = s3Service.generarUrlFirmada("foto.jpeg", "image/jpeg", 5 * 1024 * 1024);
-        var png = s3Service.generarUrlFirmada("foto.png", "image/png", 12345);
-        var webp = s3Service.generarUrlFirmada("foto.webp", "image/webp", 12345);
+        var jpeg = s3Service.generarUrlFirmada("sub-a", "foto.jpeg", "image/jpeg", 5 * 1024 * 1024);
+        var png = s3Service.generarUrlFirmada("sub-a", "foto.png", "image/png", 12345);
+        var webp = s3Service.generarUrlFirmada("sub-a", "foto.webp", "image/webp", 12345);
 
         assertThat(jpeg.get("url")).contains("X-Amz-Signature=");
         assertThat(jpeg.get("key")).endsWith("-foto.jpeg");
@@ -66,32 +67,32 @@ class S3ServiceTest {
 
     @Test
     void rechazaTipoDeContenidoQueNoCoincideConExtension() {
-        assertThatThrownBy(() -> s3Service.generarUrlFirmada("foto.jpg", "image/png", 12345))
-                .isInstanceOf(IllegalArgumentException.class)
+        assertThatThrownBy(() -> s3Service.generarUrlFirmada("sub-a", "foto.jpg", "image/png", 12345))
+                .isInstanceOf(SolicitudInvalidaException.class)
                 .hasMessage("Solo se permiten imágenes JPG, PNG o WEBP");
     }
 
     @Test
     void rechazaArchivosSobreElLimiteDeCincoMb() {
-        assertThatThrownBy(() -> s3Service.generarUrlFirmada("foto.jpg", "image/jpeg", 5 * 1024 * 1024 + 1))
-                .isInstanceOf(IllegalArgumentException.class)
+        assertThatThrownBy(() -> s3Service.generarUrlFirmada("sub-a", "foto.jpg", "image/jpeg", 5 * 1024 * 1024 + 1))
+                .isInstanceOf(SolicitudInvalidaException.class)
                 .hasMessage("La imagen debe pesar entre 1 byte y 5 MB");
     }
 
         @Test
         void rechazaTamanosCeroYNegativos() {
-        assertThatThrownBy(() -> s3Service.generarUrlFirmada("foto.jpg", "image/jpeg", 0))
-            .isInstanceOf(IllegalArgumentException.class)
+        assertThatThrownBy(() -> s3Service.generarUrlFirmada("sub-a", "foto.jpg", "image/jpeg", 0))
+            .isInstanceOf(SolicitudInvalidaException.class)
             .hasMessage("La imagen debe pesar entre 1 byte y 5 MB");
-        assertThatThrownBy(() -> s3Service.generarUrlFirmada("foto.jpg", "image/jpeg", -1))
-            .isInstanceOf(IllegalArgumentException.class)
+        assertThatThrownBy(() -> s3Service.generarUrlFirmada("sub-a", "foto.jpg", "image/jpeg", -1))
+            .isInstanceOf(SolicitudInvalidaException.class)
             .hasMessage("La imagen debe pesar entre 1 byte y 5 MB");
         }
 
     @Test
     void rechazaNombresDeArchivoConCaracteresNoPermitidos() {
-        assertThatThrownBy(() -> s3Service.generarUrlFirmada("../foto.jpg", "image/jpeg", 12345))
-                .isInstanceOf(IllegalArgumentException.class)
+        assertThatThrownBy(() -> s3Service.generarUrlFirmada("sub-a", "../foto.jpg", "image/jpeg", 12345))
+                .isInstanceOf(SolicitudInvalidaException.class)
                 .hasMessage("Solo se permiten imágenes JPG, PNG o WEBP");
     }
 }

@@ -1,5 +1,14 @@
 package com.duoc.ms_mascotas.config;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.security.authorization.AuthorizationDecision;
+
+import jakarta.annotation.PostConstruct;
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -27,6 +36,17 @@ import org.springframework.security.core.GrantedAuthority;
 @EnableWebSecurity
 public class SecurityConfig {
 
+    private static final Logger log = LoggerFactory.getLogger(SecurityConfig.class);
+    private final TokenInterno tokenInterno;
+
+    public SecurityConfig(TokenInterno tokenInterno) {
+        this.tokenInterno = tokenInterno;
+    }
+
+    // Swagger expone todo el contrato de la API: solo en local (SWAGGER_ENABLED=true), nunca por defecto
+    @Value("${springdoc.swagger-ui.enabled:false}")
+    private boolean swaggerHabilitado;
+
     @Value("${spring.security.oauth2.resourceserver.jwt.issuer-uri}")
     private String issuerUri;
 
@@ -41,10 +61,13 @@ public class SecurityConfig {
         http
             .csrf(csrf -> csrf.disable())
             .authorizeHttpRequests(auth -> auth
-                .requestMatchers("/actuator/health", "/swagger-ui/**", "/v3/api-docs/**", "/swagger-ui.html").permitAll()
-                // Llamada de servicio a servicio desde ms-alertas, sin JWT (ver
-                // InternalMascotaController) — protegida por red, no por token.
-                .requestMatchers("/internal/**").permitAll()
+                .requestMatchers("/actuator/health").permitAll()
+                .requestMatchers("/swagger-ui/**", "/v3/api-docs/**", "/swagger-ui.html")
+                    .access((autenticacion, contexto) -> new AuthorizationDecision(swaggerHabilitado))
+                // Llamadas de servicio a servicio (ms-alertas, ms-chat): no llevan JWT de usuario, pero sí el
+                // secreto compartido en X-Internal-Token. Antes era permitAll y solo protegía la red.
+                .requestMatchers("/internal/**").access((authentication, contexto) ->
+                        new AuthorizationDecision(tokenInterno.valido(contexto.getRequest().getHeader(TokenInterno.HEADER))))
                 .requestMatchers("/mascotas/admin", "/mascotas/admin/**").hasRole("ADMINISTRADOR")
                 // OJO con el orden: /mascotas/{id} de abajo también matchearía
                 // literalmente "/mascotas/mis-mascotas" (un solo segmento), así
@@ -52,6 +75,9 @@ public class SecurityConfig {
                 // gane ella y ese endpoint (datos del propio usuario) siga
                 // exigiendo JWT.
                 .requestMatchers(HttpMethod.GET, "/mascotas/mis-mascotas").authenticated()
+                // presigned-url también cae en /mascotas/{id}: sin esta regla era público y cualquiera podía
+                // pedir URLs firmadas de subida a S3 (5 MB cada una, sin límite de cantidad)
+                .requestMatchers(HttpMethod.GET, "/mascotas/presigned-url").authenticated()
                 // Listado y detalle son de acceso libre para invitados (misma
                 // decisión de UX que ms-alertas: GET /alertas, /alertas/zona).
                 .requestMatchers(HttpMethod.GET, "/mascotas", "/mascotas/{id}").permitAll()
