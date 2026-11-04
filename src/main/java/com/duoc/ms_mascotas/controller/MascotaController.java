@@ -1,16 +1,19 @@
 package com.duoc.ms_mascotas.controller;
 
+import java.util.Map;
+
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -28,8 +31,12 @@ import com.duoc.ms_mascotas.service.S3Service;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 
-import java.util.Map;
-
+/*
+ * La identidad de quien llama (el "sub") sale SIEMPRE del JWT validado, nunca de un header. Antes se leía
+ * X-User-Id: con cualquier access token válido que llamara directo a este servicio (sin pasar por el BFF),
+ * mandar X-User-Id con el sub de otra persona permitía editar, borrar o reunificar sus reportes. Ahora el
+ * servicio es seguro aunque alguien lo alcance sin pasar por el BFF.
+ */
 @RestController
 @RequestMapping("/mascotas")
 @RequiredArgsConstructor
@@ -38,9 +45,14 @@ public class MascotaController {
     private final MascotaService mascotaService;
     private final S3Service s3Service;
 
+    /* null para invitados (rutas públicas): en una petición anónima el principal no es un Jwt */
+    private static String sub(Jwt jwt) {
+        return jwt != null ? jwt.getSubject() : null;
+    }
+
+    // exige sesión por SecurityConfig (regla antes del permitAll de /mascotas/{id})
     @GetMapping("/presigned-url")
     public ResponseEntity<Map<String, String>> generarUrlFirmada(
-            @RequestHeader("X-User-Id") String usuarioId,
             @RequestParam String fileName,
             @RequestParam String contentType,
             @RequestParam long fileSize) {
@@ -49,56 +61,55 @@ public class MascotaController {
 
     @PostMapping
     public ResponseEntity<MascotaResponseDTO> crearMascota(
-            @RequestHeader("X-User-Id") String usuarioId,
+            @AuthenticationPrincipal Jwt jwt,
             @Valid @RequestBody CrearMascotaDTO dto) {
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(mascotaService.crearMascota(dto, usuarioId));
+                .body(mascotaService.crearMascota(dto, sub(jwt)));
     }
 
     @GetMapping
     public Page<MascotaResponseDTO> listarMascotas(
-            @RequestHeader(value = "X-User-Id", required = false) String usuarioId,
+            @AuthenticationPrincipal Jwt jwt,
             @RequestParam(required = false) Estado estado,
             @RequestParam(required = false) String tipoMascota,
             @RequestParam(required = false) String comuna,
             Pageable pageable) {
-        return mascotaService.listarConFiltros(usuarioId, estado, tipoMascota, comuna, pageable);
+        return mascotaService.listarConFiltros(sub(jwt), estado, tipoMascota, comuna, pageable);
     }
 
-    // X-User-Id opcional: el detalle es de acceso libre para invitados (misma
-    // decisión de UX que el listado), pero si viene y es el dueño del
-    // reporte, el servicio también lo deja ver su propia publicación aunque
-    // todavía esté pendiente o la hayan rechazado.
+    // Sin sesión también funciona: el detalle es de acceso libre para invitados (misma decisión de UX que
+    // el listado), pero si hay sesión y es el dueño del reporte, el servicio también le deja ver su propia
+    // publicación aunque todavía esté pendiente o la hayan rechazado.
     @GetMapping("/{id}")
     public ResponseEntity<MascotaResponseDTO> obtenerMascota(
-            @RequestHeader(value = "X-User-Id", required = false) String usuarioId,
+            @AuthenticationPrincipal Jwt jwt,
             @PathVariable String id) {
-        return mascotaService.obtenerPorId(id, usuarioId)
+        return mascotaService.obtenerPorId(id, sub(jwt))
                 .map(ResponseEntity::ok)
                 .orElseGet(() -> ResponseEntity.notFound().build());
     }
 
     @GetMapping("/mis-mascotas")
     public Page<MascotaResponseDTO> listarMisMascotas(
-            @RequestHeader("X-User-Id") String usuarioId,
+            @AuthenticationPrincipal Jwt jwt,
             Pageable pageable) {
-        return mascotaService.misMascotas(usuarioId, pageable);
+        return mascotaService.misMascotas(sub(jwt), pageable);
     }
 
     @PatchMapping("/{id}")
     public MascotaResponseDTO actualizarMascota(
-            @RequestHeader("X-User-Id") String usuarioId,
+            @AuthenticationPrincipal Jwt jwt,
             @PathVariable String id,
             @Valid @RequestBody ActualizarMascotaDTO dto) {
-        return mascotaService.actualizarMascota(id, dto, usuarioId);
+        return mascotaService.actualizarMascota(id, dto, sub(jwt));
     }
 
     @PatchMapping("/{id}/estado")
     public MascotaResponseDTO cambiarEstado(
-            @RequestHeader("X-User-Id") String usuarioId,
+            @AuthenticationPrincipal Jwt jwt,
             @PathVariable String id,
             @Valid @RequestBody CambiarEstadoDTO dto) {
-        return mascotaService.cambiarEstado(id, dto.getEstado(), usuarioId);
+        return mascotaService.cambiarEstado(id, dto.getEstado(), sub(jwt));
     }
 
     // Público, sin JWT: lo abre quien hizo clic en el link del correo de
@@ -121,9 +132,9 @@ public class MascotaController {
 
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> eliminarMascota(
-            @RequestHeader("X-User-Id") String usuarioId,
+            @AuthenticationPrincipal Jwt jwt,
             @PathVariable String id) {
-        mascotaService.eliminarMascota(id, usuarioId);
+        mascotaService.eliminarMascota(id, sub(jwt));
         return ResponseEntity.noContent().build();
     }
 }
