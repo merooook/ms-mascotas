@@ -18,7 +18,8 @@ services:
       AWS_SESSION_TOKEN: ${AWS_SESSION_TOKEN:-}
       # Secreto compartido con ms-alertas y ms-chat para los endpoints /internal/** (header X-Internal-Token).
       # Sin valor, esos endpoints rechazan todo. Debe ser el MISMO en los tres servicios.
-      INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN:-}
+      INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN:?Define INTERNAL_API_TOKEN en .env (minimo 32 caracteres)}
+      SWAGGER_ENABLED: "true"   # solo en local
       # LocalStack (lo levanta ms-alertas en su docker-compose.yml, en la red
       # compartida) en vez de AWS real para SNS — así no depende de la sesión
       # del lab. S3 sigue usando las credenciales reales de arriba: ver la

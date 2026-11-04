@@ -38,6 +38,8 @@ public class Mascota {
 
     private String nombre;
 
+    // indexada: antes de borrar una foto del bucket se comprueba que ningun otro reporte la use
+    @Indexed
     private String fotografia;
 
     private Estado estado;

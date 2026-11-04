@@ -1,5 +1,9 @@
 package com.duoc.ms_mascotas.controller;
 
+import com.duoc.ms_mascotas.service.LimitadorUso;
+import com.duoc.ms_mascotas.config.TokenInterno;
+import org.springframework.web.bind.annotation.RequestHeader;
+import org.springframework.beans.factory.annotation.Qualifier;
 import java.util.Map;
 
 import org.springframework.data.domain.Page;
@@ -44,6 +48,11 @@ public class MascotaController {
 
     private final MascotaService mascotaService;
     private final S3Service s3Service;
+    private final TokenInterno tokenInterno;
+    @Qualifier("limiteReportes")
+    private final LimitadorUso limiteReportes;
+    @Qualifier("limiteSubidas")
+    private final LimitadorUso limiteSubidas;
 
     /* null para invitados (rutas públicas): en una petición anónima el principal no es un Jwt */
     private static String sub(Jwt jwt) {
@@ -53,18 +62,26 @@ public class MascotaController {
     // exige sesión por SecurityConfig (regla antes del permitAll de /mascotas/{id})
     @GetMapping("/presigned-url")
     public ResponseEntity<Map<String, String>> generarUrlFirmada(
+            @AuthenticationPrincipal Jwt jwt,
             @RequestParam String fileName,
             @RequestParam String contentType,
             @RequestParam long fileSize) {
-        return ResponseEntity.ok(s3Service.generarUrlFirmada(fileName, contentType, fileSize));
+        limiteSubidas.registrar(jwt.getSubject());
+        return ResponseEntity.ok(s3Service.generarUrlFirmada(jwt.getSubject(), fileName, contentType, fileSize));
     }
 
     @PostMapping
     public ResponseEntity<MascotaResponseDTO> crearMascota(
             @AuthenticationPrincipal Jwt jwt,
+            @RequestHeader(value = "X-User-Email", required = false) String email,
+            @RequestHeader(value = TokenInterno.HEADER, required = false) String token,
             @Valid @RequestBody CrearMascotaDTO dto) {
+        limiteReportes.registrar(jwt.getSubject());
+        /* el correo sale del id_token que valida el BFF, que lo manda junto con el secreto de servicio; el que venga
+         * en el body se ignora y, sin ese secreto, un X-User-Email también (cualquiera podría escribir el de otro) */
+        String correoVerificado = tokenInterno.valido(token) ? email : null;
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(mascotaService.crearMascota(dto, sub(jwt)));
+                .body(mascotaService.crearMascota(dto, sub(jwt), correoVerificado));
     }
 
     @GetMapping

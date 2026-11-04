@@ -48,9 +48,25 @@ public class GlobalExceptionHandler {
     }
 
     /* reglas de negocio y entradas inválidas que el servicio rechaza con un mensaje pensado para quien llama */
+    @ExceptionHandler(SolicitudInvalidaException.class)
+    public ResponseEntity<Map<String, Object>> handleSolicitudInvalidaPropia(SolicitudInvalidaException exception) {
+        return response(HttpStatus.BAD_REQUEST, exception.getMessage(), null);
+    }
+
+    /* las librerías también lanzan IllegalArgumentException con mensajes internos: no se devuelven al cliente */
     @ExceptionHandler({IllegalArgumentException.class, MissingRequestHeaderException.class})
     public ResponseEntity<Map<String, Object>> handleBadRequest(Exception exception) {
-        return response(HttpStatus.BAD_REQUEST, exception.getMessage(), null);
+        log.warn("Solicitud rechazada ({}): {}", exception.getClass().getSimpleName(), exception.getMessage());
+        return response(HttpStatus.BAD_REQUEST, "Solicitud inválida", null);
+    }
+
+    @ExceptionHandler(DemasiadasSolicitudesException.class)
+    public ResponseEntity<Map<String, Object>> handleDemasiadasSolicitudes(DemasiadasSolicitudesException exception) {
+        ResponseEntity<Map<String, Object>> base = response(HttpStatus.TOO_MANY_REQUESTS,
+                "Demasiadas solicitudes, intenta más tarde", null);
+        return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+                .header("Retry-After", String.valueOf(exception.getReintentarEnSegundos()))
+                .body(base.getBody());
     }
 
     /* errores del cliente que Spring detecta antes de llegar al servicio (JSON mal formado, ?estado=FOO, etc.) */

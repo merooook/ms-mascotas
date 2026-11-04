@@ -12,7 +12,7 @@ class SecurityConfigTest {
 
     @Test
     void agregaAutoridadAdministrativaSoloParaElGrupoDeCognito() {
-        var converter = new SecurityConfig().jwtAuthenticationConverter();
+        var converter = new SecurityConfig(new TokenInterno("secreto-de-servicio-de-prueba-de-al-menos-32-caracteres")).jwtAuthenticationConverter();
         Jwt administrador = Jwt.withTokenValue("admin")
                 .header("alg", "none")
                 .claim("cognito:groups", List.of("Administradores"))

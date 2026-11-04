@@ -32,13 +32,19 @@ public class SnsEventPublisher {
     }
 
     public void publicar(String tipoEvento, Object payload) {
-        String mensaje;
+        publicarJson(tipoEvento, serializar(tipoEvento, payload));
+    }
+
+    /** JSON del evento; separado de la publicación para poder guardarlo y reintentarlo si SNS falla. */
+    public String serializar(String tipoEvento, Object payload) {
         try {
-            mensaje = objectMapper.writeValueAsString(payload);
+            return objectMapper.writeValueAsString(payload);
         } catch (JsonProcessingException e) {
             throw new IllegalStateException("No se pudo serializar el evento " + tipoEvento, e);
         }
+    }
 
+    public void publicarJson(String tipoEvento, String mensaje) {
         snsClient.publish(PublishRequest.builder()
                 .topicArn(topicArn)
                 .message(mensaje)

@@ -12,4 +12,7 @@ public interface MascotaRepository extends MongoRepository<Mascota, String> {
     Page<Mascota> findByEstado(Estado estado, Pageable pageable);
 
     Page<Mascota> findByUsuarioId(String usuarioId, Pageable pageable);
+
+    /* ¿algun OTRO reporte usa esta foto? (la foto puede estar guardada como clave o como URL del bucket) */
+    boolean existsByFotografiaInAndIdMascotaNot(java.util.Collection<String> formas, String idMascota);
 }
