@@ -112,4 +112,41 @@ class ValidacionDtoTest {
 
         assertThat(camposInvalidos(dto)).contains("ubicacion.longitud");
     }
+
+    @Test
+    void elNombreLaComunaYLaDescripcionNoAdmitenCaracteresDeControl() {
+        CrearMascotaDTO dto = valido();
+        dto.setNombre("Firu\r\nBcc: victima@example.com");
+        dto.setComuna("Viña\ndel Mar");
+        dto.setDescripcion("texto\r\notra linea");
+
+        assertThat(camposInvalidos(dto)).contains("nombre", "comuna", "descripcion");
+    }
+
+    @Test
+    void laDescripcionSiPuedeTenerSaltosDeLineaNormalesYTabulaciones() {
+        CrearMascotaDTO dto = valido();
+        dto.setDescripcion("Línea uno\nLínea dos\tcon tabulación, ñandú y acentos áéíóú");
+
+        assertThat(validador.validate(dto)).isEmpty();
+    }
+
+    @Test
+    void laEdicionTampocoAdmiteCaracteresDeControl() {
+        ActualizarMascotaDTO dto = new ActualizarMascotaDTO();
+        dto.setComuna("Viña\r\n");
+        dto.setDescripcion("x\u0000y");
+
+        assertThat(camposInvalidos(dto)).contains("comuna", "descripcion");
+    }
+
+    @Test
+    void elCorreoYaNoEsObligatorioPeroSiVieneDebeSerValido() {
+        CrearMascotaDTO dto = valido();
+        dto.setEmailContacto(null);
+        assertThat(validador.validate(dto)).isEmpty();
+
+        dto.setEmailContacto("no-es-un-correo");
+        assertThat(camposInvalidos(dto)).contains("emailContacto");
+    }
 }

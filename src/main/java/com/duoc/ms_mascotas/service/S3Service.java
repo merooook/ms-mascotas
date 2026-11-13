@@ -1,5 +1,6 @@
 package com.duoc.ms_mascotas.service;
 
+import com.duoc.ms_mascotas.exception.SolicitudInvalidaException;
 import java.time.Duration;
 import java.util.Locale;
 import java.util.Map;
@@ -29,9 +30,11 @@ public class S3Service {
 
     private final S3Presigner s3Presigner;
 
-    public Map<String, String> generarUrlFirmada(String fileName, String contentType, long fileSize) {
+    /* la clave lleva el hash del sub de quien pide la URL: asi una foto solo puede asociarse al reporte de su
+     * dueño (ver FotografiaService) y copiar la clave de otra persona no sirve para borrarle la foto */
+    public Map<String, String> generarUrlFirmada(String sub, String fileName, String contentType, long fileSize) {
         String normalizedFileName = validarArchivo(fileName, contentType, fileSize);
-        String key = "mascotas/" + UUID.randomUUID() + "-" + normalizedFileName;
+        String key = "mascotas/" + FotografiaService.hashDe(sub) + "/" + UUID.randomUUID() + "-" + normalizedFileName;
 
         PutObjectRequest objectRequest = PutObjectRequest.builder()
                 .bucket(bucketName)
@@ -49,10 +52,10 @@ public class S3Service {
 
     private String validarArchivo(String fileName, String contentType, long fileSize) {
         if (fileName == null || contentType == null) {
-            throw new IllegalArgumentException("El nombre y tipo del archivo son requeridos");
+            throw new SolicitudInvalidaException("El nombre y tipo del archivo son requeridos");
         }
         if (fileSize <= 0 || fileSize > MAX_FILE_SIZE) {
-            throw new IllegalArgumentException("La imagen debe pesar entre 1 byte y 5 MB");
+            throw new SolicitudInvalidaException("La imagen debe pesar entre 1 byte y 5 MB");
         }
 
         String normalizedFileName = fileName.trim();
@@ -60,7 +63,7 @@ public class S3Service {
         if (!FILE_NAME.matcher(normalizedFileName).matches()
                 || !ALLOWED_CONTENT_TYPES.contains(normalizedContentType)
                 || !contentTypeMatchesExtension(normalizedFileName, normalizedContentType)) {
-            throw new IllegalArgumentException("Solo se permiten imágenes JPG, PNG o WEBP");
+            throw new SolicitudInvalidaException("Solo se permiten imágenes JPG, PNG o WEBP");
         }
         return normalizedFileName;
     }

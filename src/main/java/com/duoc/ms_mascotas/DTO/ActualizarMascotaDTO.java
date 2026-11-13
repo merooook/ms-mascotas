@@ -3,6 +3,7 @@ package com.duoc.ms_mascotas.DTO;
 import java.util.Map;
 
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import lombok.AllArgsConstructor;
 import lombok.Data;
@@ -23,12 +24,14 @@ public class ActualizarMascotaDTO {
     private UbicacionDTO ubicacion;
 
     @Size(max = 100, message = "La comuna no puede superar los 100 caracteres")
+    @Pattern(regexp = "^[\\P{Cntrl}]*$", message = "La comuna no puede tener saltos de línea ni caracteres de control")
     private String comuna;
 
     @Size(max = 500, message = "La fotografía no puede superar los 500 caracteres")
     private String fotografia;
 
     @Size(max = 1000, message = "La descripción no puede superar los 1000 caracteres")
+    @Pattern(regexp = "^[\\P{Cntrl}\\n\\t]*$", message = "La descripción no puede tener caracteres de control")
     private String descripcion;
 
     @Size(max = 20, message = "No se pueden enviar más de 20 características")

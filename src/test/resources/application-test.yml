@@ -30,3 +30,7 @@ aws:
   region: us-east-1
   sns:
     topic-arn: arn:aws:sns:us-east-1:000000000000:test-topic
+
+# secreto de servicio (el servicio no arranca sin uno de minimo 32 caracteres)
+internal:
+  api-token: secreto-de-servicio-de-prueba-de-al-menos-32-caracteres

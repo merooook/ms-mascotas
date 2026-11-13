@@ -37,7 +37,8 @@ import org.springframework.data.mongodb.core.geo.GeoJsonPoint;
 import com.duoc.ms_mascotas.DTO.ActualizarMascotaDTO;
 import com.duoc.ms_mascotas.DTO.CrearMascotaDTO;
 import com.duoc.ms_mascotas.DTO.MascotaReportadaEvento;
-import com.duoc.ms_mascotas.messaging.SnsEventPublisher;
+import com.duoc.ms_mascotas.messaging.OutboxEventos;
+import com.duoc.ms_mascotas.exception.SolicitudInvalidaException;
 import com.duoc.ms_mascotas.model.Estado;
 import com.duoc.ms_mascotas.model.EstadoModeracion;
 import com.duoc.ms_mascotas.model.Mascota;
@@ -54,7 +55,7 @@ public class MascotaServiceTest {
 	private MongoTemplate mongoTemplate;
 
 	@Mock
-	private SnsEventPublisher snsEventPublisher;
+	private OutboxEventos eventos;
 
 	@Mock
 	private FotografiaService fotografiaService;
@@ -82,7 +83,7 @@ public class MascotaServiceTest {
 				Estado.EXTRAVIADO, null, "Viña del Mar", "raza mestiza", null, "reportante@example.com");
 		when(mascotaRepository.save(any(Mascota.class))).thenReturn(mascota);
 
-		var respuesta = mascotaService.crearMascota(dto, "usuario-1");
+		var respuesta = mascotaService.crearMascota(dto, "usuario-1", "reportante@example.com");
 
 		assertThat(respuesta.getIdMascota()).isEqualTo("mascota-1");
 		assertThat(respuesta.getEstado()).isEqualTo(Estado.EXTRAVIADO);
@@ -95,7 +96,7 @@ public class MascotaServiceTest {
 		CrearMascotaDTO dto = new CrearMascotaDTO(TipoMascota.PERRO, "Luna", null,
 				Estado.EXTRAVIADO, null, "Viña del Mar", null, null, "reportante@example.com");
 
-		mascotaService.crearMascota(dto, "usuario-1");
+		mascotaService.crearMascota(dto, "usuario-1", "reportante@example.com");
 
 		org.mockito.ArgumentCaptor<Mascota> captor = org.mockito.ArgumentCaptor.forClass(Mascota.class);
 		verify(mascotaRepository).save(captor.capture());
@@ -108,7 +109,7 @@ public class MascotaServiceTest {
 		CrearMascotaDTO dto = new CrearMascotaDTO(TipoMascota.PERRO, "Luna", null,
 				Estado.EXTRAVIADO, null, "Viña del Mar", null, null, "reportante@example.com");
 
-		var respuesta = mascotaService.crearMascota(dto, "usuario-1");
+		var respuesta = mascotaService.crearMascota(dto, "usuario-1", "reportante@example.com");
 
 		assertThat(respuesta.getTipoReporte()).isEqualTo(Estado.EXTRAVIADO);
 	}
@@ -123,7 +124,7 @@ public class MascotaServiceTest {
 		mascotaService.cambiarEstado("mascota-1", Estado.REUNIFICADO, "usuario-1");
 
 		org.mockito.ArgumentCaptor<Object> captor = org.mockito.ArgumentCaptor.forClass(Object.class);
-		verify(snsEventPublisher).publicar(eq(MascotaService.TIPO_EVENTO_MASCOTA_REUNIFICADA), captor.capture());
+		verify(eventos).publicar(eq(MascotaService.TIPO_EVENTO_MASCOTA_REUNIFICADA), captor.capture(), any());
 		com.duoc.ms_mascotas.DTO.MascotaReunificadaEvento evento =
 				(com.duoc.ms_mascotas.DTO.MascotaReunificadaEvento) captor.getValue();
 		assertThat(evento.getMascotaId()).isEqualTo("mascota-1");
@@ -139,7 +140,7 @@ public class MascotaServiceTest {
 
 		mascotaService.cambiarEstado("mascota-1", Estado.REUNIFICADO, "usuario-1");
 
-		verify(snsEventPublisher, never()).publicar(eq(MascotaService.TIPO_EVENTO_MASCOTA_REUNIFICADA), any(Object.class));
+		verify(eventos, never()).publicar(eq(MascotaService.TIPO_EVENTO_MASCOTA_REUNIFICADA), any(Object.class), any());
 	}
 
 	@Test
@@ -171,7 +172,7 @@ public class MascotaServiceTest {
 		CrearMascotaDTO dto = new CrearMascotaDTO(TipoMascota.PERRO, "Luna", null,
 				Estado.EXTRAVIADO, null, "Viña del Mar", null, null, "reportante@example.com");
 
-		var respuesta = mascotaService.crearMascota(dto, "usuario-1");
+		var respuesta = mascotaService.crearMascota(dto, "usuario-1", "reportante@example.com");
 
 		assertThat(respuesta.getEstadoModeracion()).isEqualTo(EstadoModeracion.PENDIENTE);
 	}
@@ -201,7 +202,7 @@ public class MascotaServiceTest {
 		when(mascotaRepository.findById("mascota-1")).thenReturn(Optional.of(mascota));
 		when(mascotaRepository.save(any(Mascota.class))).thenAnswer(inv -> inv.getArgument(0));
 
-		var respuesta = mascotaService.aprobarMascota("mascota-1");
+		var respuesta = mascotaService.aprobarMascota("mascota-1", "admin-1");
 
 		assertThat(respuesta.getEstadoModeracion()).isEqualTo(EstadoModeracion.APROBADA);
 		assertThat(mascotaService.obtenerPorId("mascota-1", null)).isPresent();
@@ -213,7 +214,7 @@ public class MascotaServiceTest {
 		when(mascotaRepository.findById("mascota-1")).thenReturn(Optional.of(mascota));
 		when(mascotaRepository.save(any(Mascota.class))).thenAnswer(inv -> inv.getArgument(0));
 
-		var respuesta = mascotaService.rechazarMascota("mascota-1");
+		var respuesta = mascotaService.rechazarMascota("mascota-1", "admin-1");
 
 		assertThat(respuesta.getEstadoModeracion()).isEqualTo(EstadoModeracion.RECHAZADA);
 		assertThat(mascotaService.obtenerPorId("mascota-1", null)).isEmpty();
@@ -224,8 +225,8 @@ public class MascotaServiceTest {
 		mascota.setEstadoModeracion(EstadoModeracion.APROBADA);
 		when(mascotaRepository.findById("mascota-1")).thenReturn(Optional.of(mascota));
 
-		assertThatThrownBy(() -> mascotaService.rechazarMascota("mascota-1"))
-				.isInstanceOf(IllegalArgumentException.class)
+		assertThatThrownBy(() -> mascotaService.rechazarMascota("mascota-1", "admin-1"))
+				.isInstanceOf(SolicitudInvalidaException.class)
 				.hasMessage("Solo se pueden moderar reportes pendientes");
 		verify(mascotaRepository, never()).save(any(Mascota.class));
 	}
@@ -249,14 +250,21 @@ public class MascotaServiceTest {
 		mascota.setTokenReunificacion("token-valido");
 		mascota.setTokenReunificacionExpira(LocalDateTime.now().plusDays(1));
 		when(mascotaRepository.findById("mascota-1")).thenReturn(Optional.of(mascota));
-		when(mascotaRepository.save(any(Mascota.class))).thenAnswer(inv -> inv.getArgument(0));
+		/* findAndModify atómico: gana este clic y devuelve el documento ya reunificado y sin token */
+		when(mongoTemplate.findAndModify(any(Query.class), any(org.springframework.data.mongodb.core.query.Update.class),
+				any(org.springframework.data.mongodb.core.FindAndModifyOptions.class), eq(Mascota.class)))
+				.thenAnswer(inv -> {
+					mascota.setEstado(Estado.REUNIFICADO);
+					mascota.setTokenReunificacion(null);
+					return mascota;
+				});
 
 		var resultado = mascotaService.confirmarReunificacion("mascota-1", "token-valido");
 
 		assertThat(resultado).isEqualTo(MascotaService.ResultadoConfirmacion.CONFIRMADA);
 		assertThat(mascota.getEstado()).isEqualTo(Estado.REUNIFICADO);
 		assertThat(mascota.getTokenReunificacion()).isNull();
-		verify(snsEventPublisher).publicar(eq(MascotaService.TIPO_EVENTO_MASCOTA_REUNIFICADA), any(Object.class));
+		verify(eventos).publicar(eq(MascotaService.TIPO_EVENTO_MASCOTA_REUNIFICADA), any(Object.class), any());
 	}
 
 	@Test
@@ -303,7 +311,7 @@ public class MascotaServiceTest {
 
 		mascotaService.cambiarEstado("mascota-1", Estado.ENCONTRADO, "usuario-1");
 
-		verify(snsEventPublisher, never()).publicar(eq(MascotaService.TIPO_EVENTO_MASCOTA_REUNIFICADA), any(Object.class));
+		verify(eventos, never()).publicar(eq(MascotaService.TIPO_EVENTO_MASCOTA_REUNIFICADA), any(Object.class), any());
 	}
 
 	@Test
@@ -340,27 +348,10 @@ public class MascotaServiceTest {
 		CrearMascotaDTO dto = new CrearMascotaDTO(TipoMascota.PERRO, "Luna", null,
 				Estado.EXTRAVIADO, null, "Viña del Mar", null, null, "reportante@example.com");
 
-		var respuesta = mascotaService.crearMascota(dto, "usuario-1");
+		var respuesta = mascotaService.crearMascota(dto, "usuario-1", "reportante@example.com");
 
 		assertThat(respuesta.getUbicacion().getLatitud()).isEqualTo(-33.46);
 		assertThat(respuesta.getUbicacion().getLongitud()).isEqualTo(-70.99);
-	}
-
-	@Test
-	void crearMascotaConUbicacionPublicaEventoParaAlertaDeZona() {
-		mascota.setUbicacion(new GeoJsonPoint(-70.987654, -33.456789));
-		when(mascotaRepository.save(any(Mascota.class))).thenReturn(mascota);
-		CrearMascotaDTO dto = new CrearMascotaDTO(TipoMascota.PERRO, "Luna", null,
-				Estado.EXTRAVIADO, null, "Viña del Mar", null, null, "reportante@example.com");
-
-		mascotaService.crearMascota(dto, "usuario-1");
-
-		org.mockito.ArgumentCaptor<Object> captor = org.mockito.ArgumentCaptor.forClass(Object.class);
-		verify(snsEventPublisher).publicar(eq(MascotaService.TIPO_EVENTO_MASCOTA_REPORTADA), captor.capture());
-		MascotaReportadaEvento evento = (MascotaReportadaEvento) captor.getValue();
-		assertThat(evento.getMascotaId()).isEqualTo("mascota-1");
-		assertThat(evento.getLatitud()).isEqualTo(-33.456789);
-		assertThat(evento.getLongitud()).isEqualTo(-70.987654);
 	}
 
 	@Test
@@ -369,9 +360,9 @@ public class MascotaServiceTest {
 		CrearMascotaDTO dto = new CrearMascotaDTO(TipoMascota.PERRO, "Luna", null,
 				Estado.EXTRAVIADO, null, "Viña del Mar", null, null, "reportante@example.com");
 
-		mascotaService.crearMascota(dto, "usuario-1");
+		mascotaService.crearMascota(dto, "usuario-1", "reportante@example.com");
 
-		verify(snsEventPublisher, never()).publicar(any(String.class), any(Object.class));
+		verify(eventos, never()).publicar(any(String.class), any(Object.class), any());
 	}
 
 	@Test
@@ -457,7 +448,7 @@ public class MascotaServiceTest {
 		when(mascotaRepository.findById("mascota-1")).thenReturn(Optional.of(mascota));
 
 		assertThatThrownBy(() -> mascotaService.cambiarEstado("mascota-1", Estado.ENCONTRADO, "usuario-1"))
-				.isInstanceOf(IllegalArgumentException.class)
+				.isInstanceOf(SolicitudInvalidaException.class)
 				.hasMessage("No se puede cambiar el estado de una mascota reunificada");
 		verify(mascotaRepository, never()).save(any(Mascota.class));
 	}
@@ -518,7 +509,7 @@ public class MascotaServiceTest {
 		CrearMascotaDTO dto = crearDto();
 		dto.setEstado(Estado.REUNIFICADO);
 
-		assertThatThrownBy(() -> mascotaService.crearMascota(dto, "usuario-1")).isInstanceOf(IllegalArgumentException.class);
+		assertThatThrownBy(() -> mascotaService.crearMascota(dto, "usuario-1", "reportante@example.com")).isInstanceOf(SolicitudInvalidaException.class);
 		verify(mascotaRepository, never()).save(any(Mascota.class));
 	}
 
@@ -526,10 +517,10 @@ public class MascotaServiceTest {
 	void unaFotografiaDeUnOrigenNoPermitidoSeRechazaAlCrear() {
 		CrearMascotaDTO dto = crearDto();
 		dto.setFotografia("https://sitio-malo.example/pixel.gif");
-		when(fotografiaService.esPermitida("https://sitio-malo.example/pixel.gif")).thenReturn(false);
+		when(fotografiaService.esPermitida(eq("https://sitio-malo.example/pixel.gif"), any())).thenReturn(false);
 
-		assertThatThrownBy(() -> mascotaService.crearMascota(dto, "usuario-1"))
-				.isInstanceOf(IllegalArgumentException.class).hasMessageContaining("fotografía");
+		assertThatThrownBy(() -> mascotaService.crearMascota(dto, "usuario-1", "reportante@example.com"))
+				.isInstanceOf(SolicitudInvalidaException.class).hasMessageContaining("fotografía");
 		verify(mascotaRepository, never()).save(any(Mascota.class));
 	}
 
@@ -537,10 +528,10 @@ public class MascotaServiceTest {
 	void unaFotografiaPermitidaSeGuarda() {
 		CrearMascotaDTO dto = crearDto();
 		dto.setFotografia("mascotas/foto-ok");
-		when(fotografiaService.esPermitida("mascotas/foto-ok")).thenReturn(true);
+		when(fotografiaService.esPermitida(eq("mascotas/foto-ok"), any())).thenReturn(true);
 		guardarDevuelveLoRecibido();
 
-		var respuesta = mascotaService.crearMascota(dto, "usuario-1");
+		var respuesta = mascotaService.crearMascota(dto, "usuario-1", "reportante@example.com");
 
 		assertThat(respuesta.getFotografia()).isEqualTo("mascotas/foto-ok");
 	}
@@ -556,8 +547,8 @@ public class MascotaServiceTest {
 			CrearMascotaDTO dto = crearDto();
 			dto.setCaracteristicas(malas);
 
-			assertThatThrownBy(() -> mascotaService.crearMascota(dto, "usuario-1"))
-					.as(malas.toString()).isInstanceOf(IllegalArgumentException.class);
+			assertThatThrownBy(() -> mascotaService.crearMascota(dto, "usuario-1", "reportante@example.com"))
+					.as(malas.toString()).isInstanceOf(SolicitudInvalidaException.class);
 		}
 		verify(mascotaRepository, never()).save(any(Mascota.class));
 	}
@@ -569,56 +560,20 @@ public class MascotaServiceTest {
 		guardarDevuelveLoRecibido();
 		ArgumentCaptor<Mascota> captor = ArgumentCaptor.forClass(Mascota.class);
 
-		mascotaService.crearMascota(dto, "usuario-1");
+		mascotaService.crearMascota(dto, "usuario-1", "reportante@example.com");
 
 		verify(mascotaRepository).save(captor.capture());
 		assertThat(captor.getValue().getCaracteristicas()).containsOnlyKeys("descripcion");
 	}
 
-	// ---------- SNS caído: el cambio ya quedó guardado y la petición no falla ----------
-
-	@Test
-	void siSnsFallaCrearMascotaIgualRespondeBien() {
-		guardarDevuelveLoRecibido();
-		doThrow(new RuntimeException("SNS caído")).when(snsEventPublisher).publicar(anyString(), any());
-
-		var respuesta = mascotaService.crearMascota(crearDto(), "usuario-1");
-
-		assertThat(respuesta.getNombre()).isEqualTo("Luna");
-		verify(mascotaRepository).save(any(Mascota.class));
-	}
-
-	@Test
-	void siSnsFallaCambiarEstadoAReunificadoIgualRespondeBien() {
-		mascota.setEmailContacto("dueno@example.com");
-		when(mascotaRepository.findById("mascota-1")).thenReturn(Optional.of(mascota));
-		guardarDevuelveLoRecibido();
-		doThrow(new RuntimeException("SNS caído")).when(snsEventPublisher).publicar(anyString(), any());
-
-		var respuesta = mascotaService.cambiarEstado("mascota-1", Estado.REUNIFICADO, "usuario-1");
-
-		assertThat(respuesta.getEstado()).isEqualTo(Estado.REUNIFICADO);
-	}
-
-	@Test
-	void siSnsFallaConfirmarReunificacionIgualQuedaConfirmada() {
-		mascota.setEmailContacto("dueno@example.com");
-		mascota.setTokenReunificacion("tok");
-		mascota.setTokenReunificacionExpira(LocalDateTime.now().plusDays(1));
-		when(mascotaRepository.findById("mascota-1")).thenReturn(Optional.of(mascota));
-		guardarDevuelveLoRecibido();
-		doThrow(new RuntimeException("SNS caído")).when(snsEventPublisher).publicar(anyString(), any());
-
-		assertThat(mascotaService.confirmarReunificacion("mascota-1", "tok"))
-				.isEqualTo(MascotaService.ResultadoConfirmacion.CONFIRMADA);
-	}
+	// ---------- SNS caído: lo resuelve OutboxEventos (ver OutboxEventosTest); acá solo se delega ----------
 
 	// ---------- editar: moderación, foto, características, dueño ----------
 
 	@Test
 	void cambiarLaFotografiaDevuelveElReporteAModeracion() {
 		Mascota m = aprobadaConZona();
-		when(fotografiaService.esPermitida("mascotas/foto-nueva")).thenReturn(true);
+		when(fotografiaService.esPermitida(eq("mascotas/foto-nueva"), any())).thenReturn(true);
 
 		mascotaService.actualizarMascota("mascota-1", new ActualizarMascotaDTO(null, null, "mascotas/foto-nueva", null, null), "usuario-1");
 
@@ -662,11 +617,11 @@ public class MascotaServiceTest {
 	@Test
 	void unaFotografiaNoPermitidaSeRechazaAlEditarYNoSeGuarda() {
 		aprobadaConZona();
-		when(fotografiaService.esPermitida("https://sitio-malo.example/x.png")).thenReturn(false);
+		when(fotografiaService.esPermitida(eq("https://sitio-malo.example/x.png"), any())).thenReturn(false);
 
 		assertThatThrownBy(() -> mascotaService.actualizarMascota("mascota-1",
 				new ActualizarMascotaDTO(null, null, "https://sitio-malo.example/x.png", null, null), "usuario-1"))
-				.isInstanceOf(IllegalArgumentException.class);
+				.isInstanceOf(SolicitudInvalidaException.class);
 		verify(mascotaRepository, never()).save(any(Mascota.class));
 	}
 
@@ -682,7 +637,7 @@ public class MascotaServiceTest {
 
 		assertThatThrownBy(() -> mascotaService.actualizarMascota("mascota-1",
 				new ActualizarMascotaDTO(null, null, null, null, nuevas), "usuario-1"))
-				.isInstanceOf(IllegalArgumentException.class);
+				.isInstanceOf(SolicitudInvalidaException.class);
 		verify(mascotaRepository, never()).save(any(Mascota.class));
 	}
 
@@ -719,34 +674,26 @@ public class MascotaServiceTest {
 	@Test
 	void eliminarBorraLaFotoYPublicaElEventoDeEliminacion() {
 		mascota.setFotografia("mascotas/foto-ok");
+		when(fotografiaService.formasDe("mascotas/foto-ok")).thenReturn(List.of("mascotas/foto-ok"));
 		when(mascotaRepository.findById("mascota-1")).thenReturn(Optional.of(mascota));
 
 		mascotaService.eliminarMascota("mascota-1", "usuario-1");
 
 		verify(fotografiaService).eliminar("mascotas/foto-ok");
-		verify(snsEventPublisher).publicar(eq(MascotaService.TIPO_EVENTO_MASCOTA_ELIMINADA), any());
+		verify(eventos).publicar(eq(MascotaService.TIPO_EVENTO_MASCOTA_ELIMINADA), any(), any());
 	}
 
 	@Test
 	void eliminarComoAdministradorTambienLimpiaLosDatosAsociados() {
 		mascota.setFotografia("mascotas/foto-ok");
+		when(fotografiaService.formasDe("mascotas/foto-ok")).thenReturn(List.of("mascotas/foto-ok"));
 		when(mascotaRepository.findById("mascota-1")).thenReturn(Optional.of(mascota));
 
-		mascotaService.eliminarComoAdministrador("mascota-1");
+		mascotaService.eliminarComoAdministrador("mascota-1", "admin-1");
 
 		verify(mascotaRepository).delete(mascota);
 		verify(fotografiaService).eliminar("mascotas/foto-ok");
-		verify(snsEventPublisher).publicar(eq(MascotaService.TIPO_EVENTO_MASCOTA_ELIMINADA), any());
-	}
-
-	@Test
-	void siSnsFallaAlEliminarElReporteIgualQuedaEliminado() {
-		when(mascotaRepository.findById("mascota-1")).thenReturn(Optional.of(mascota));
-		doThrow(new RuntimeException("SNS caído")).when(snsEventPublisher).publicar(anyString(), any());
-
-		mascotaService.eliminarMascota("mascota-1", "usuario-1");
-
-		verify(mascotaRepository).deleteById("mascota-1");
+		verify(eventos).publicar(eq(MascotaService.TIPO_EVENTO_MASCOTA_ELIMINADA), any(), any());
 	}
 
 	// ---------- token de reunificación: se reutiliza el vigente ----------
@@ -796,7 +743,7 @@ public class MascotaServiceTest {
 			Pageable pedida = PageRequest.of(0, 20, Sort.by(campo).ascending());
 
 			assertThatThrownBy(() -> mascotaService.listarConFiltros(null, null, null, null, pedida))
-					.as(campo).isInstanceOf(IllegalArgumentException.class);
+					.as(campo).isInstanceOf(SolicitudInvalidaException.class);
 		}
 		verify(mongoTemplate, never()).find(any(Query.class), eq(Mascota.class));
 	}
@@ -813,5 +760,167 @@ public class MascotaServiceTest {
 		Query consulta = consultaDelListado(PageRequest.of(0, 5000));
 
 		assertThat(consulta.getLimit()).isEqualTo(200);
+	}
+
+	// ---------- revisión V2: correo verificado, alerta al aprobar, fotos, carreras ----------
+
+	@Test
+	void sinCorreoVerificadoNoSeCreaElReporte() {
+		for (String malo : new String[] { null, "", "  ", "sin-arroba", "a@b" , "x@y.cl\r\nBcc: v@z.cl", "a".repeat(200) + "@x.cl" }) {
+			assertThatThrownBy(() -> mascotaService.crearMascota(crearDto(), "usuario-1", malo))
+					.as(String.valueOf(malo)).isInstanceOf(SolicitudInvalidaException.class);
+		}
+		verify(mascotaRepository, never()).save(any(Mascota.class));
+	}
+
+	@Test
+	void elCorreoDelBodyNoSeUsaSoloElVerificado() {
+		guardarDevuelveLoRecibido();
+		CrearMascotaDTO dto = crearDto();
+		dto.setEmailContacto("de-un-tercero@example.com");
+		ArgumentCaptor<Mascota> captor = ArgumentCaptor.forClass(Mascota.class);
+
+		mascotaService.crearMascota(dto, "usuario-1", " verificado@example.com ");
+
+		verify(mascotaRepository).save(captor.capture());
+		assertThat(captor.getValue().getEmailContacto()).isEqualTo("verificado@example.com");
+	}
+
+	@Test
+	void crearMascotaNoPublicaLaAlertaDeZonaHastaQueSeApruebe() {
+		mascota.setUbicacion(new GeoJsonPoint(-70.987654, -33.456789));
+		when(mascotaRepository.save(any(Mascota.class))).thenReturn(mascota);
+
+		mascotaService.crearMascota(crearDto(), "usuario-1", "reportante@example.com");
+
+		verify(eventos, never()).publicar(any(String.class), any(Object.class), any());
+	}
+
+	@Test
+	void aprobarPublicaLaAlertaDeZonaConLaUbicacionExacta() {
+		mascota.setEstadoModeracion(EstadoModeracion.PENDIENTE);
+		mascota.setUbicacion(new GeoJsonPoint(-70.987654, -33.456789));
+		when(mascotaRepository.findById("mascota-1")).thenReturn(Optional.of(mascota));
+		when(mascotaRepository.save(any(Mascota.class))).thenAnswer(inv -> inv.getArgument(0));
+
+		mascotaService.aprobarMascota("mascota-1", "admin-1");
+
+		ArgumentCaptor<Object> captor = ArgumentCaptor.forClass(Object.class);
+		verify(eventos).publicar(eq(MascotaService.TIPO_EVENTO_MASCOTA_REPORTADA), captor.capture(), eq("mascota-1"));
+		MascotaReportadaEvento evento = (MascotaReportadaEvento) captor.getValue();
+		assertThat(evento.getMascotaId()).isEqualTo("mascota-1");
+		assertThat(evento.getLatitud()).isEqualTo(-33.456789);
+		assertThat(evento.getLongitud()).isEqualTo(-70.987654);
+	}
+
+	@Test
+	void aprobarSinUbicacionNoPublicaNada() {
+		mascota.setEstadoModeracion(EstadoModeracion.PENDIENTE);
+		when(mascotaRepository.findById("mascota-1")).thenReturn(Optional.of(mascota));
+		when(mascotaRepository.save(any(Mascota.class))).thenAnswer(inv -> inv.getArgument(0));
+
+		mascotaService.aprobarMascota("mascota-1", "admin-1");
+
+		verify(eventos, never()).publicar(any(String.class), any(Object.class), any());
+	}
+
+	@Test
+	void rechazarPublicaMascotaRetiradaPorSiYaHabiaUnaAlerta() {
+		mascota.setEstadoModeracion(EstadoModeracion.PENDIENTE);
+		when(mascotaRepository.findById("mascota-1")).thenReturn(Optional.of(mascota));
+		when(mascotaRepository.save(any(Mascota.class))).thenAnswer(inv -> inv.getArgument(0));
+
+		mascotaService.rechazarMascota("mascota-1", "admin-1");
+
+		verify(eventos).publicar(eq(MascotaService.TIPO_EVENTO_MASCOTA_RETIRADA), any(Object.class), eq("mascota-1"));
+		verify(eventos, never()).publicar(eq(MascotaService.TIPO_EVENTO_MASCOTA_REPORTADA), any(Object.class), any());
+	}
+
+	@Test
+	void editarElContenidoPublicoDeUnReporteAprobadoLoRetiraDelMapa() {
+		Mascota m = aprobadaConZona();
+		when(fotografiaService.esPermitida(eq("mascotas/foto-nueva"), any())).thenReturn(true);
+
+		mascotaService.actualizarMascota("mascota-1", new ActualizarMascotaDTO(null, null, "mascotas/foto-nueva", null, null), "usuario-1");
+
+		assertThat(m.getEstadoModeracion()).isEqualTo(EstadoModeracion.PENDIENTE);
+		verify(eventos).publicar(eq(MascotaService.TIPO_EVENTO_MASCOTA_RETIRADA), any(Object.class), eq("mascota-1"));
+	}
+
+	@Test
+	void editarSinCambiarElContenidoPublicoNoPublicaNada() {
+		aprobadaConZona();
+
+		mascotaService.actualizarMascota("mascota-1", new ActualizarMascotaDTO(null, "Santiago", null, null, null), "usuario-1");
+
+		verify(eventos, never()).publicar(any(String.class), any(Object.class), any());
+	}
+
+	@Test
+	void laFotoReemplazadaSeBorraDelBucketSiNingunOtroReporteLaUsa() {
+		Mascota m = aprobadaConZona();
+		m.setFotografia("mascotas/aaaaaaaaaaaaaaaa/vieja.jpg");
+		when(fotografiaService.esPermitida(eq("mascotas/foto-nueva"), any())).thenReturn(true);
+		when(fotografiaService.formasDe("mascotas/aaaaaaaaaaaaaaaa/vieja.jpg")).thenReturn(List.of("mascotas/aaaaaaaaaaaaaaaa/vieja.jpg"));
+
+		mascotaService.actualizarMascota("mascota-1", new ActualizarMascotaDTO(null, null, "mascotas/foto-nueva", null, null), "usuario-1");
+
+		verify(fotografiaService).eliminar("mascotas/aaaaaaaaaaaaaaaa/vieja.jpg");
+	}
+
+	@Test
+	void unaFotoCompartidaConOtroReporteNoSeBorraAlEliminar() {
+		/* el hallazgo 1 de la V2: borrar un reporte no debe dejar sin foto a otro que la referencia */
+		mascota.setFotografia("mascotas/foto-ok");
+		when(fotografiaService.formasDe("mascotas/foto-ok")).thenReturn(List.of("mascotas/foto-ok", "https://b.s3.amazonaws.com/mascotas/foto-ok"));
+		when(mascotaRepository.existsByFotografiaInAndIdMascotaNot(any(), eq("mascota-1"))).thenReturn(true);
+		when(mascotaRepository.findById("mascota-1")).thenReturn(Optional.of(mascota));
+
+		mascotaService.eliminarMascota("mascota-1", "usuario-1");
+
+		verify(fotografiaService, never()).eliminar(any());
+		verify(eventos).publicar(eq(MascotaService.TIPO_EVENTO_MASCOTA_ELIMINADA), any(), any());
+	}
+
+	@Test
+	void unaFotoDeRellenoNuncaSeBorraDelBucket() {
+		mascota.setFotografia("https://images.unsplash.com/foto.jpg");
+		when(fotografiaService.formasDe("https://images.unsplash.com/foto.jpg")).thenReturn(List.of());
+		when(mascotaRepository.findById("mascota-1")).thenReturn(Optional.of(mascota));
+
+		mascotaService.eliminarMascota("mascota-1", "usuario-1");
+
+		verify(fotografiaService, never()).eliminar(any());
+		verify(mascotaRepository, never()).existsByFotografiaInAndIdMascotaNot(any(), any());
+	}
+
+	@Test
+	void dosClicsAlMismoTiempoSoloPublicanUnaReunificacion() {
+		mascota.setEmailContacto("duena@example.com");
+		mascota.setTokenReunificacion("tok");
+		mascota.setTokenReunificacionExpira(LocalDateTime.now().plusDays(1));
+		when(mascotaRepository.findById("mascota-1")).thenReturn(Optional.of(mascota));
+		/* el segundo clic pierde la carrera: findAndModify ya no encuentra el token y devuelve null */
+		when(mongoTemplate.findAndModify(any(Query.class), any(org.springframework.data.mongodb.core.query.Update.class),
+				any(org.springframework.data.mongodb.core.FindAndModifyOptions.class), eq(Mascota.class))).thenReturn(null);
+
+		var resultado = mascotaService.confirmarReunificacion("mascota-1", "tok");
+
+		assertThat(resultado).isEqualTo(MascotaService.ResultadoConfirmacion.YA_REUNIFICADA);
+		verify(eventos, never()).publicar(any(String.class), any(Object.class), any());
+	}
+
+	@Test
+	void elListadoDeModeracionTambienTieneTopeDePaginaYOrdenPermitido() {
+		for (String campo : List.of("emailContacto", "tokenReunificacion")) {
+			Pageable pedida = PageRequest.of(0, 20, Sort.by(campo).ascending());
+
+			assertThatThrownBy(() -> mascotaService.listarParaModeracion(EstadoModeracion.PENDIENTE, pedida))
+					.as(campo).isInstanceOf(SolicitudInvalidaException.class);
+		}
+		mascotaService.listarParaModeracion(EstadoModeracion.PENDIENTE, PageRequest.of(0, 5000));
+		ArgumentCaptor<Query> captor = ArgumentCaptor.forClass(Query.class);
+		verify(mongoTemplate).find(captor.capture(), eq(Mascota.class));
+		assertThat(captor.getValue().getLimit()).isEqualTo(200);
 	}
 }

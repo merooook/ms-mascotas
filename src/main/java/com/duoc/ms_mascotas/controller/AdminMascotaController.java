@@ -1,5 +1,7 @@
 package com.duoc.ms_mascotas.controller;
 
+import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.ResponseEntity;
@@ -32,18 +34,18 @@ public class AdminMascotaController {
     }
 
     @PatchMapping("/{id}/aprobar")
-    public MascotaResponseDTO aprobar(@PathVariable String id) {
-        return mascotaService.aprobarMascota(id);
+    public MascotaResponseDTO aprobar(@AuthenticationPrincipal Jwt jwt, @PathVariable String id) {
+        return mascotaService.aprobarMascota(id, jwt.getSubject());
     }
 
     @PatchMapping("/{id}/rechazar")
-    public MascotaResponseDTO rechazar(@PathVariable String id) {
-        return mascotaService.rechazarMascota(id);
+    public MascotaResponseDTO rechazar(@AuthenticationPrincipal Jwt jwt, @PathVariable String id) {
+        return mascotaService.rechazarMascota(id, jwt.getSubject());
     }
 
     @DeleteMapping("/{id}")
-    public ResponseEntity<Void> eliminar(@PathVariable String id) {
-        mascotaService.eliminarComoAdministrador(id);
+    public ResponseEntity<Void> eliminar(@AuthenticationPrincipal Jwt jwt, @PathVariable String id) {
+        mascotaService.eliminarComoAdministrador(id, jwt.getSubject());
         return ResponseEntity.noContent().build();
     }
 }

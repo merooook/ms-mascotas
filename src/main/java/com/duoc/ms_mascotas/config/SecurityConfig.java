@@ -37,21 +37,15 @@ import org.springframework.security.core.GrantedAuthority;
 public class SecurityConfig {
 
     private static final Logger log = LoggerFactory.getLogger(SecurityConfig.class);
-    private static final String HEADER_TOKEN_INTERNO = "X-Internal-Token";
-    private static final int LARGO_MINIMO_TOKEN_INTERNO = 32;
+    private final TokenInterno tokenInterno;
 
-    /* secreto compartido con ms-alertas y ms-chat para /internal/**. Sin valor (o corto) el acceso interno
-     * queda cerrado del todo: falla cerrado, igual que la clave del ticket del chat */
-    @Value("${internal.api-token:}")
-    private String internalApiToken;
-
-    @PostConstruct
-    void avisarSiFaltaElTokenInterno() {
-        if (internalApiToken == null || internalApiToken.length() < LARGO_MINIMO_TOKEN_INTERNO) {
-            log.warn("internal.api-token (INTERNAL_API_TOKEN) ausente o menor a {} caracteres: "
-                    + "los endpoints /internal/** rechazarán todas las llamadas", LARGO_MINIMO_TOKEN_INTERNO);
-        }
+    public SecurityConfig(TokenInterno tokenInterno) {
+        this.tokenInterno = tokenInterno;
     }
+
+    // Swagger expone todo el contrato de la API: solo en local (SWAGGER_ENABLED=true), nunca por defecto
+    @Value("${springdoc.swagger-ui.enabled:false}")
+    private boolean swaggerHabilitado;
 
     @Value("${spring.security.oauth2.resourceserver.jwt.issuer-uri}")
     private String issuerUri;
@@ -67,11 +61,13 @@ public class SecurityConfig {
         http
             .csrf(csrf -> csrf.disable())
             .authorizeHttpRequests(auth -> auth
-                .requestMatchers("/actuator/health", "/swagger-ui/**", "/v3/api-docs/**", "/swagger-ui.html").permitAll()
+                .requestMatchers("/actuator/health").permitAll()
+                .requestMatchers("/swagger-ui/**", "/v3/api-docs/**", "/swagger-ui.html")
+                    .access((autenticacion, contexto) -> new AuthorizationDecision(swaggerHabilitado))
                 // Llamadas de servicio a servicio (ms-alertas, ms-chat): no llevan JWT de usuario, pero sí el
                 // secreto compartido en X-Internal-Token. Antes era permitAll y solo protegía la red.
                 .requestMatchers("/internal/**").access((authentication, contexto) ->
-                        new AuthorizationDecision(tokenInternoValido(contexto.getRequest())))
+                        new AuthorizationDecision(tokenInterno.valido(contexto.getRequest().getHeader(TokenInterno.HEADER))))
                 .requestMatchers("/mascotas/admin", "/mascotas/admin/**").hasRole("ADMINISTRADOR")
                 // OJO con el orden: /mascotas/{id} de abajo también matchearía
                 // literalmente "/mascotas/mis-mascotas" (un solo segmento), así
@@ -96,16 +92,6 @@ public class SecurityConfig {
                     .jwtAuthenticationConverter(jwtAuthenticationConverter())));
 
         return http.build();
-    }
-
-    /* comparación en tiempo constante; sin token configurado nunca se autoriza */
-    private boolean tokenInternoValido(HttpServletRequest request) {
-        String recibido = request.getHeader(HEADER_TOKEN_INTERNO);
-        if (recibido == null || internalApiToken == null || internalApiToken.length() < LARGO_MINIMO_TOKEN_INTERNO) {
-            return false;
-        }
-        return MessageDigest.isEqual(
-                recibido.getBytes(StandardCharsets.UTF_8), internalApiToken.getBytes(StandardCharsets.UTF_8));
     }
 
     JwtAuthenticationConverter jwtAuthenticationConverter() {

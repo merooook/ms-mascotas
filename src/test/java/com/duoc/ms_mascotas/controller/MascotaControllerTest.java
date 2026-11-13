@@ -1,5 +1,6 @@
 package com.duoc.ms_mascotas.controller;
 
+import com.duoc.ms_mascotas.exception.SolicitudInvalidaException;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
@@ -15,6 +16,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import java.util.Map;
@@ -152,7 +154,7 @@ public class MascotaControllerTest {
 
 	@Test
 	void presignedUrlConSesionDevuelveLaUrlFirmada() throws Exception {
-		when(s3Service.generarUrlFirmada("foto.jpg", "image/jpeg", 1000))
+		when(s3Service.generarUrlFirmada(eq("sub-a"), eq("foto.jpg"), eq("image/jpeg"), eq(1000L)))
 				.thenReturn(Map.of("url", "https://bucket/x?firma", "key", "mascotas/x"));
 
 		mockMvc.perform(get("/mascotas/presigned-url").with(usuario("sub-a")).param("fileName", "foto.jpg")
@@ -179,22 +181,14 @@ public class MascotaControllerTest {
 
 	@Test
 	void crearUsaElSubDelTokenYNoUnHeaderDeIdentidad() throws Exception {
-		when(mascotaService.crearMascota(any(CrearMascotaDTO.class), eq("sub-a"))).thenReturn(respuesta());
+		when(mascotaService.crearMascota(any(CrearMascotaDTO.class), eq("sub-a"), any())).thenReturn(respuesta());
 
 		mockMvc.perform(post("/mascotas").with(usuario("sub-a")).header("X-User-Id", "sub-de-la-victima")
 				.contentType(MediaType.APPLICATION_JSON).content(CUERPO_CREAR))
 				.andExpect(status().isCreated());
 
-		verify(mascotaService).crearMascota(any(CrearMascotaDTO.class), eq("sub-a"));
-		verify(mascotaService, never()).crearMascota(any(CrearMascotaDTO.class), eq("sub-de-la-victima"));
-	}
-
-	@Test
-	void crearSinEmailDeContactoDevuelve400() throws Exception {
-		String sinEmail = CUERPO_CREAR.replace("\"emailContacto\":\"dueno@example.com\",", "");
-
-		mockMvc.perform(post("/mascotas").with(usuario("sub-a")).contentType(MediaType.APPLICATION_JSON).content(sinEmail))
-				.andExpect(status().isBadRequest());
+		verify(mascotaService).crearMascota(any(CrearMascotaDTO.class), eq("sub-a"), any());
+		verify(mascotaService, never()).crearMascota(any(CrearMascotaDTO.class), eq("sub-de-la-victima"), any());
 	}
 
 	@Test
@@ -339,7 +333,7 @@ public class MascotaControllerTest {
 
 	@Test
 	void unaReglaDeNegocioIncumplidaDevuelve400() throws Exception {
-		doThrow(new IllegalArgumentException("No se puede cambiar el estado de una mascota reunificada"))
+		doThrow(new SolicitudInvalidaException("No se puede cambiar el estado de una mascota reunificada"))
 				.when(mascotaService).cambiarEstado("m1", Estado.ENCONTRADO, "sub-a");
 
 		mockMvc.perform(patch("/mascotas/m1/estado").with(usuario("sub-a")).contentType(MediaType.APPLICATION_JSON)
@@ -427,5 +421,90 @@ public class MascotaControllerTest {
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.duenoSub").value("sub-dueno"))
 				.andExpect(jsonPath("$.duenoEmail").value("dueno@example.com"));
+	}
+
+	// ---------- revisión V2: correo verificado, cuotas, Swagger, errores genéricos ----------
+
+	@Test
+	void elCorreoSoloSeTomaDelHeaderDelBffCuandoLlegaConElSecretoDeServicio() throws Exception {
+		when(mascotaService.crearMascota(any(CrearMascotaDTO.class), eq("sub-a"), any())).thenReturn(respuesta());
+
+		mockMvc.perform(post("/mascotas").with(usuario("sub-a")).header("X-User-Email", "verificado@example.com")
+				.header("X-Internal-Token", TOKEN_INTERNO)
+				.contentType(MediaType.APPLICATION_JSON).content(CUERPO_CREAR)).andExpect(status().isCreated());
+		/* sin el secreto un X-User-Email es de un cliente cualquiera: se ignora (y el body tampoco cuenta) */
+		mockMvc.perform(post("/mascotas").with(usuario("sub-b")).header("X-User-Email", "de-un-tercero@example.com")
+				.contentType(MediaType.APPLICATION_JSON).content(CUERPO_CREAR));
+		when(mascotaService.crearMascota(any(CrearMascotaDTO.class), eq("sub-c"), any())).thenReturn(respuesta());
+		mockMvc.perform(post("/mascotas").with(usuario("sub-c")).header("X-User-Email", "de-un-tercero@example.com")
+				.header("X-Internal-Token", "token-equivocado-token-equivocado-123456")
+				.contentType(MediaType.APPLICATION_JSON).content(CUERPO_CREAR)).andExpect(status().isCreated());
+
+		verify(mascotaService).crearMascota(any(CrearMascotaDTO.class), eq("sub-a"), eq("verificado@example.com"));
+		verify(mascotaService).crearMascota(any(CrearMascotaDTO.class), eq("sub-c"), org.mockito.ArgumentMatchers.isNull());
+	}
+
+	@Test
+	void ahoraElCorreoDelBodyYaNoEsObligatorio() throws Exception {
+		when(mascotaService.crearMascota(any(CrearMascotaDTO.class), eq("sub-a"), any())).thenReturn(respuesta());
+		String sinCorreo = """
+				{"tipoMascota":"PERRO","nombre":"Luna","estado":"EXTRAVIADO","comuna":"Viña del Mar",
+				 "ubicacion":{"latitud":-33.03,"longitud":-71.55}}""";
+
+		mockMvc.perform(post("/mascotas").with(usuario("sub-a")).contentType(MediaType.APPLICATION_JSON).content(sinCorreo))
+				.andExpect(status().isCreated());
+	}
+
+	@Test
+	void unUsuarioSoloPuedeCrearUnaCantidadDeReportesPorDia() throws Exception {
+		when(mascotaService.crearMascota(any(CrearMascotaDTO.class), eq("sub-spam"), any())).thenReturn(respuesta());
+		for (int i = 0; i < 10; i++) {
+			mockMvc.perform(post("/mascotas").with(usuario("sub-spam")).contentType(MediaType.APPLICATION_JSON).content(CUERPO_CREAR))
+					.andExpect(status().isCreated());
+		}
+
+		mockMvc.perform(post("/mascotas").with(usuario("sub-spam")).contentType(MediaType.APPLICATION_JSON).content(CUERPO_CREAR))
+				.andExpect(status().isTooManyRequests())
+				.andExpect(header().exists("Retry-After"));
+	}
+
+	@Test
+	void lasUrlsDeSubidaTambienTienenCuotaPorUsuario() throws Exception {
+		when(s3Service.generarUrlFirmada(eq("sub-subidas"), any(), any(), org.mockito.ArgumentMatchers.anyLong()))
+				.thenReturn(Map.of("url", "https://bucket/x?firma", "key", "mascotas/x"));
+		for (int i = 0; i < 30; i++) {
+			mockMvc.perform(get("/mascotas/presigned-url").with(usuario("sub-subidas")).param("fileName", "foto.jpg")
+					.param("contentType", "image/jpeg").param("fileSize", "1000")).andExpect(status().isOk());
+		}
+
+		mockMvc.perform(get("/mascotas/presigned-url").with(usuario("sub-subidas")).param("fileName", "foto.jpg")
+				.param("contentType", "image/jpeg").param("fileSize", "1000"))
+				.andExpect(status().isTooManyRequests());
+	}
+
+	@Test
+	void swaggerEstaApagadoPorDefecto() throws Exception {
+		mockMvc.perform(get("/v3/api-docs")).andExpect(status().is4xxClientError());
+		mockMvc.perform(get("/swagger-ui/index.html")).andExpect(status().is4xxClientError());
+	}
+
+	@Test
+	void elMensajeDeUnaExcepcionDeLibreriaNoSeDevuelveAlCliente() throws Exception {
+		doThrow(new IllegalArgumentException("detalle interno: campo X de la clase Y"))
+				.when(mascotaService).eliminarMascota(any(), any());
+
+		mockMvc.perform(delete("/mascotas/m1").with(usuario("sub-a")))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.message").value("Solicitud inválida"));
+	}
+
+	@Test
+	void elMensajeDeUnaReglaPropiaDelServicioSiSeDevuelve() throws Exception {
+		doThrow(new SolicitudInvalidaException("La imagen debe pesar entre 1 byte y 5 MB"))
+				.when(mascotaService).eliminarMascota(any(), any());
+
+		mockMvc.perform(delete("/mascotas/m1").with(usuario("sub-a")))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.message").value("La imagen debe pesar entre 1 byte y 5 MB"));
 	}
 }
