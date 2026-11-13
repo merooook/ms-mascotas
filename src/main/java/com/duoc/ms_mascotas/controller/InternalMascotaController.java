@@ -3,6 +3,7 @@ package com.duoc.ms_mascotas.controller;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -14,15 +15,11 @@ import com.duoc.ms_mascotas.service.MascotaService;
 import lombok.RequiredArgsConstructor;
 
 /**
- * Endpoint interno consumido solo por ms-alertas (MascotasClient) para resolver
- * el destinatario del flujo de Contacto — nunca se expone al frontend.
+ * Endpoints internos, de servicio a servicio (ms-alertas y ms-chat) — nunca se exponen al frontend.
  *
- * Sin autenticación JWT porque la llamada de ms-alertas no trae ninguna (ver
- * ContactoServiceImpl/MascotasClient, RestClient sin Authorization). Su
- * protección real hoy es de red: en AWS, ms-mascotas solo debería aceptar
- * tráfico desde ms-alertas y el BFF. OJO: la tabla de Security Groups del
- * proyecto (CLAUDE.md) hoy solo abre SG-Mascotas a SG-BFF, no a SG-Alertas —
- * falta sumar esa regla o esta llamada fallará en AWS aunque funcione en local.
+ * Exigen el header X-Internal-Token con un secreto compartido (INTERNAL_API_TOKEN), validado en
+ * SecurityConfig. Antes eran públicos y los protegía solo la red: quien alcanzara el servicio obtenía el
+ * correo del dueño y un token con el que se podía cerrar cualquier reporte ajeno.
  */
 @RestController
 @RequestMapping("/internal/mascotas")
@@ -31,13 +28,14 @@ public class InternalMascotaController {
 
     private final MascotaService mascotaService;
 
-    @GetMapping("/{id}/contacto")
+    /**
+     * POST (no GET): puede emitir un token de reunificación, o sea tiene efecto secundario, y una lectura
+     * no debería cambiar nada. Si ya hay un token vigente se reutiliza (ver MascotaService).
+     */
+    @PostMapping("/{id}/contacto")
     public ResponseEntity<MascotaContactoDTO> obtenerContacto(@PathVariable String id) {
         return mascotaService.obtenerParaContacto(id)
                 .map(mascota -> {
-                    // Se genera (o renueva) acá, no al leer: solo tiene sentido
-                    // emitir un token cuando de verdad alguien va a contactar,
-                    // no en cualquier lectura.
                     Mascota conToken = mascotaService.generarTokenConfirmacion(mascota.getIdMascota());
                     return MascotaContactoDTO.builder()
                             .mascotaId(conToken.getIdMascota())
@@ -51,9 +49,9 @@ public class InternalMascotaController {
     }
 
     /**
-     * Para ms-chat: quién es el dueño de un reporte. Reutiliza obtenerParaContacto, así
-     * que igual que el contacto solo responde por reportes aprobados (uno pendiente o
-     * rechazado devuelve 404). Un reporte sin usuarioId (histórico) tampoco admite chat.
+     * Para ms-chat: quién es el dueño de un reporte y a qué correo avisarle de mensajes nuevos.
+     * Reutiliza obtenerParaContacto, así que igual que el contacto solo responde por reportes aprobados
+     * (uno pendiente o rechazado devuelve 404). Un reporte sin usuarioId (histórico) tampoco admite chat.
      */
     @GetMapping("/{id}/chat")
     public ResponseEntity<MascotaChatDTO> obtenerParaChat(@PathVariable String id) {
@@ -63,6 +61,7 @@ public class InternalMascotaController {
                         .mascotaId(mascota.getIdMascota())
                         .nombreMascota(mascota.getNombre())
                         .duenoSub(mascota.getUsuarioId())
+                        .duenoEmail(mascota.getEmailContacto())
                         .build())
                 .map(ResponseEntity::ok)
                 .orElseGet(() -> ResponseEntity.notFound().build());
